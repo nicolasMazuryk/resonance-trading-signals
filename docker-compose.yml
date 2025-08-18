@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  telegram-signals-executor:
+    build: .
+    container_name: telegram-signals-executor
+    environment:
+      - NODE_ENV=production
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_SESSION=${TELEGRAM_SESSION}
+      - TELEGRAM_BOT_ID=${TELEGRAM_BOT_ID}
+      - EXCHANGE_ID=${EXCHANGE_ID:-binanceusdm}
+      - EXCHANGE_API_KEY=${EXCHANGE_API_KEY}
+      - EXCHANGE_API_SECRET=${EXCHANGE_API_SECRET}
+      - DEFAULT_LEVERAGE=${DEFAULT_LEVERAGE:-10}
+      - ORDER_SLIPPAGE_TOLERANCE=${ORDER_SLIPPAGE_TOLERANCE:-0.2}
+      - MAX_SIGNAL_AGE_MS=${MAX_SIGNAL_AGE_MS:-90000}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
