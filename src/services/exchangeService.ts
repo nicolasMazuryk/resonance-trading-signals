@@ -1,6 +1,6 @@
 import ccxt from 'ccxt';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { logger, serializeError } from '../utils/logger';
 import { OrderSide, OrderType } from '../types';
 
 export class ExchangeService {
@@ -43,7 +43,7 @@ export class ExchangeService {
         logger.info('Exchange supports leverage setting');
       }
     } catch (error) {
-      logger.error('Failed to initialize exchange', { error });
+      logger.error('Failed to initialize exchange', { error: serializeError(error) });
       throw error;
     }
   }
@@ -114,7 +114,7 @@ export class ExchangeService {
       
       return true;
     } catch (error) {
-      logger.error('Failed to check minimum notional', { error, symbol, amount, price });
+      logger.error('Failed to check minimum notional', { error: serializeError(error), symbol, amount, price });
       return false;
     }
   }
@@ -134,7 +134,7 @@ export class ExchangeService {
       
       logger.info('Leverage set', { symbol, leverage });
     } catch (error) {
-      logger.error('Failed to set leverage', { error, symbol, leverage });
+      logger.error('Failed to set leverage', { error: serializeError(error), symbol, leverage });
       throw error;
     }
   }
@@ -150,7 +150,7 @@ export class ExchangeService {
       logger.debug('Ticker fetched', { symbol, last: ticker.last });
       return ticker;
     } catch (error) {
-      logger.error('Failed to fetch ticker', { error, symbol });
+      logger.error('Failed to fetch ticker', { error: serializeError(error), symbol });
       throw error;
     }
   }
@@ -194,7 +194,7 @@ export class ExchangeService {
 
       return order;
     } catch (error) {
-      logger.error('Failed to place limit order', { error, symbol, side, amount, price });
+      logger.error('Failed to place limit order', { error: serializeError(error), symbol, side, amount, price });
       throw error;
     }
   }
@@ -228,7 +228,7 @@ export class ExchangeService {
 
       return order;
     } catch (error) {
-      logger.error('Failed to place market order', { error, symbol, side, amount });
+      logger.error('Failed to place market order', { error: serializeError(error), symbol, side, amount });
       throw error;
     }
   }
@@ -244,7 +244,7 @@ export class ExchangeService {
       logger.debug('Order fetched', { symbol, orderId, status: order.status });
       return order;
     } catch (error) {
-      logger.error('Failed to fetch order', { error, symbol, orderId });
+      logger.error('Failed to fetch order', { error: serializeError(error), symbol, orderId });
       throw error;
     }
   }
@@ -260,7 +260,7 @@ export class ExchangeService {
       logger.info('Order cancelled', { symbol, orderId, status: order.status });
       return order;
     } catch (error) {
-      logger.error('Failed to cancel order', { error, symbol, orderId });
+      logger.error('Failed to cancel order', { error: serializeError(error), symbol, orderId });
       throw error;
     }
   }
@@ -273,7 +273,7 @@ export class ExchangeService {
       await this.exchange.fetchStatus();
       return true;
     } catch (error) {
-      logger.error('Exchange health check failed', { error });
+      logger.error('Exchange health check failed', { error: serializeError(error) });
       return false;
     }
   }
@@ -286,7 +286,7 @@ export class ExchangeService {
       const balance = await this.exchange.fetchBalance();
       return balance;
     } catch (error) {
-      logger.error('Failed to fetch balance', { error });
+      logger.error('Failed to fetch balance', { error: serializeError(error) });
       throw error;
     }
   }

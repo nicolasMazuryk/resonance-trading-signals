@@ -1,7 +1,7 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { logger, serializeError, serializeObject } from '../utils/logger';
 import { SignalParser } from '../parsers/signalParser';
 import { Signal } from '../types';
 
@@ -42,7 +42,13 @@ export class TelegramService {
           throw new Error('Phone code authentication not supported - use session string');
         },
         onError: (err) => {
-          logger.error('Telegram client error', { error: err });
+          const serializedErr = serializeError(err);
+          logger.error('Telegram client error', { 
+            error: serializedErr,
+            errorType: typeof err,
+            errorConstructor: err?.constructor?.name,
+            hasError: !!err
+          });
         },
       });
 
@@ -54,7 +60,7 @@ export class TelegramService {
       logger.info('Current session string', { sessionString });
       
     } catch (error) {
-      logger.error('Failed to initialize Telegram client', { error });
+      logger.error('Failed to initialize Telegram client', { error: serializeError(error) });
       throw error;
     }
   }
@@ -69,14 +75,106 @@ export class TelegramService {
 
     this.messageHandler = messageHandler;
 
-    // Listen for new messages
-    this.client.addEventHandler(
-      async (event: any) => {
-        await this.handleNewMessage(event);
-      }
-    );
+    // Listen for new messages - we'll filter by event type in the handler
+    try {
+      this.client.addEventHandler(
+        async (event: any) => {
+          // Add immediate debugging to see if this handler is even being called
+          logger.debug('Event handler called', { 
+            eventType: event?.className,
+            hasMessage: !!event?.message,
+            eventKeys: event ? Object.keys(event).slice(0, 10) : [],
+            timestamp: new Date().toISOString()
+          });
+          
+          try {
+            await this.handleNewMessage(event);
+          } catch (error) {
+            // Enhanced error logging for the main event handler
+            const errorDetails = {
+              errorMessage: error instanceof Error ? error.message : String(error),
+              errorName: error instanceof Error ? error.name : 'Unknown',
+              errorStack: error instanceof Error ? error.stack : 'No stack trace',
+              errorType: typeof error,
+              errorConstructor: error?.constructor?.name || 'Unknown',
+              hasError: !!error,
+              errorKeys: error && typeof error === 'object' ? Object.keys(error).slice(0, 10) : [],
+              eventType: event?.className,
+              eventKeys: event ? Object.keys(event).slice(0, 10) : [],
+              timestamp: new Date().toISOString()
+            };
+            
+            logger.error('Unhandled error in message handler', errorDetails);
+            
+            // Also try to serialize the error object for additional debugging
+            try {
+              const serializedError = serializeError(error);
+              logger.error('Serialized error details', { serializedError });
+            } catch (serializeErr) {
+              logger.error('Failed to serialize error for debugging', { 
+                serializeError: String(serializeErr) 
+              });
+            }
+            
+            // Don't re-throw to prevent the application from crashing
+          }
+        }
+      );
+      logger.info('Event handler registered successfully');
+    } catch (handlerError) {
+      const serializedHandlerError = serializeError(handlerError);
+      logger.error('Failed to register event handler', { 
+        error: serializedHandlerError,
+        errorType: typeof handlerError,
+        errorConstructor: handlerError?.constructor?.name
+      });
+      throw handlerError;
+    }
 
     logger.info('Started listening for Telegram messages');
+  }
+
+  /**
+   * Check if a message is from an allowed channel
+   */
+  private async isMessageFromAllowedChannel(message: any): Promise<boolean> {
+    try {
+      // If no filtering is configured, allow all messages
+      if (!config.telegram.allowedChannels) {
+        return true;
+      }
+
+      const chatId = message?.chatId;
+      if (!chatId) {
+        logger.debug('Message has no chatId, skipping', { messageId: message?.id });
+        return false;
+      }
+
+      // Get chat entity to check username
+      const chatEntity = await this.client.getEntity(chatId);
+      
+      // Check username
+      if (config.telegram.allowedChannels.usernames?.length) {
+        const username = 'username' in chatEntity ? chatEntity.username : undefined;
+        if (username && config.telegram.allowedChannels.usernames.includes(username)) {
+          logger.debug('Message allowed by username', { username, chatId });
+          return true;
+        }
+      }
+
+      logger.debug('Message filtered out - not from allowed channel', { 
+        chatId, 
+        username: 'username' in chatEntity ? chatEntity.username : undefined
+      });
+      return false;
+    } catch (error) {
+      logger.error('Error checking if message is from allowed channel', { 
+        error: serializeError(error), 
+        chatId: message.chatId 
+      });
+      // If we can't verify, allow the message to be safe
+      return true;
+    }
   }
 
   /**
@@ -84,10 +182,48 @@ export class TelegramService {
    */
   private async handleNewMessage(event: any): Promise<void> {
     try {
+      // Defensive check for event
+      if (!event) {
+        logger.debug('Received null/undefined event');
+        return;
+      }
+
+      // Only process NewMessage events
+      if (event.className !== 'NewMessage') {
+        // Only log non-message events occasionally to avoid spam
+        if (Math.random() < 0.10) { // Log 10% of non-message events
+          logger.debug('Skipping non-message event', { 
+            eventType: event.className,
+            eventData: serializeObject(event, 2) // Limit depth to avoid circular refs
+          });
+        }
+        return;
+      }
+
       const message = event.message;
+      
+      // Skip if no message object
+      if (!message) {
+        logger.debug('Skipping event without message object', { 
+          eventType: event.className,
+          eventKeys: Object.keys(event).slice(0, 10)
+        });
+        return;
+      }
       
       // Skip messages without text
       if (!message.text) {
+        logger.debug('Skipping message without text', { 
+          messageId: message.id,
+          chatId: message.chatId,
+          messageKeys: Object.keys(message).slice(0, 10)
+        });
+        return;
+      }
+
+      // Check if message is from allowed channel
+      const isAllowed = await this.isMessageFromAllowedChannel(message);
+      if (!isAllowed) {
         return;
       }
 
@@ -97,24 +233,36 @@ export class TelegramService {
     //   }
 
       const messageText = message.text;
-      const messageId = message.id;
+      const messageId = message.id || 0;
       const chatId = message.chatId?.toString() || '0';
-      const timestamp = new Date(message.date * 1000); // Convert Unix timestamp to Date
+      const timestamp = message.date ? new Date(message.date * 1000) : new Date(); // Convert Unix timestamp to Date
 
-      logger.debug('Received Telegram message', {
+      logger.debug('Processing Telegram message', {
         messageId,
         chatId,
         timestamp,
         textLength: messageText.length,
+        textPreview: messageText.substring(0, 100) + (messageText.length > 100 ? '...' : '')
       });
 
       // Try to parse as signal
-      const signal = SignalParser.parseMessage(
-        messageText,
-        messageId,
-        parseInt(chatId),
-        timestamp
-      );
+      let signal: Signal | null = null;
+      try {
+        signal = SignalParser.parseMessage(
+          messageText,
+          messageId,
+          parseInt(chatId),
+          timestamp
+        );
+      } catch (parseError) {
+        logger.error('Error parsing signal', { 
+          error: serializeError(parseError),
+          messageId,
+          chatId,
+          textPreview: messageText.substring(0, 200)
+        });
+        return;
+      }
 
       if (signal) {
         logger.info('Signal parsed successfully', {
@@ -126,13 +274,51 @@ export class TelegramService {
 
         // Call the message handler
         if (this.messageHandler) {
-          await this.messageHandler(signal);
+          try {
+            await this.messageHandler(signal);
+          } catch (handlerError) {
+            logger.error('Error in message handler callback', { 
+              error: serializeError(handlerError),
+              signalType: signal.type,
+              symbol: signal.symbol
+            });
+            // Don't re-throw to prevent the application from crashing
+          }
         }
       } else {
         logger.debug('Message is not a signal', { messageId, chatId });
       }
     } catch (error) {
-      logger.error('Error handling Telegram message', { error, event });
+      // Enhanced error logging with more details
+      const errorDetails = {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        errorStack: error instanceof Error ? error.stack : 'No stack trace',
+        errorType: typeof error,
+        errorConstructor: error?.constructor?.name || 'Unknown',
+        hasError: !!error,
+        errorKeys: error && typeof error === 'object' ? Object.keys(error).slice(0, 10) : [],
+        eventType: event?.className,
+        eventKeys: event ? Object.keys(event).slice(0, 10) : [],
+        timestamp: new Date().toISOString()
+      };
+      
+      logger.error('Error handling Telegram message', errorDetails);
+      
+      // Also try to serialize the error object for additional debugging
+      try {
+        const serializedError = serializeError(error);
+        const serializedEvent = serializeObject(event, 2);
+        
+        logger.error('Serialized error details', { 
+          serializedError, 
+          serializedEvent 
+        });
+      } catch (serializeErr) {
+        logger.error('Failed to serialize error for debugging', { 
+          serializeError: String(serializeErr) 
+        });
+      }
     }
   }
 
@@ -148,7 +334,7 @@ export class TelegramService {
       await this.client.sendMessage(chatId, { message: text });
       logger.info('Message sent', { chatId, textLength: text.length });
     } catch (error) {
-      logger.error('Failed to send Telegram message', { error, chatId });
+      logger.error('Failed to send Telegram message', { error: serializeError(error), chatId });
       throw error;
     }
   }
@@ -170,7 +356,7 @@ export class TelegramService {
         type: entity.className,
       };
     } catch (error) {
-      logger.error('Failed to get chat info', { error, chatId });
+      logger.error('Failed to get chat info', { error: serializeError(error), chatId });
       throw error;
     }
   }
@@ -193,7 +379,7 @@ export class TelegramService {
         senderId: msg.senderId,
       }));
     } catch (error) {
-      logger.error('Failed to get recent messages', { error, chatId });
+      logger.error('Failed to get recent messages', { error: serializeError(error), chatId });
       throw error;
     }
   }
@@ -211,7 +397,7 @@ export class TelegramService {
       await this.client.getMe();
       return true;
     } catch (error) {
-      logger.error('Telegram health check failed', { error });
+      logger.error('Telegram health check failed', { error: serializeError(error) });
       return false;
     }
   }
@@ -227,7 +413,7 @@ export class TelegramService {
         logger.info('Telegram client disconnected');
       }
     } catch (error) {
-      logger.error('Error disconnecting Telegram client', { error });
+      logger.error('Error disconnecting Telegram client', { error: serializeError(error) });
     }
   }
 

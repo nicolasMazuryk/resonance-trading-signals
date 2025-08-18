@@ -9,6 +9,10 @@ export interface Config {
     apiHash: string;
     session: string;
     botId: string;
+    // Add filtering options for specific bot channels
+    allowedChannels?: {
+      usernames?: string[];
+    };
   };
   exchange: {
     id: string;
@@ -35,6 +39,9 @@ const getConfig = (): Config => {
         apiHash: process.env['TELEGRAM_API_HASH'] || 'test_api_hash',
         session: process.env['TELEGRAM_SESSION'] || 'test_session',
         botId: process.env['TELEGRAM_BOT_ID'] || 'test_bot_id',
+        allowedChannels: {
+          usernames: process.env['TELEGRAM_ALLOWED_USERNAMES']?.split(',') || [],
+        },
       },
       exchange: {
         id: process.env['EXCHANGE_ID'] || 'test_exchange',
@@ -57,6 +64,9 @@ const getConfig = (): Config => {
       apiHash: process.env['TELEGRAM_API_HASH'] || '',
       session: process.env['TELEGRAM_SESSION'] || '',
       botId: process.env['TELEGRAM_BOT_ID'] || '',
+      allowedChannels: {
+        usernames: process.env['TELEGRAM_ALLOWED_USERNAMES']?.split(',') || [],
+      },
     },
     exchange: {
       id: process.env['EXCHANGE_ID'] || 'binanceusdm',

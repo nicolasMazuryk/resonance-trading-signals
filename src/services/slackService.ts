@@ -1,6 +1,6 @@
 import { SlackAlert } from '../types';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { logger, serializeError } from '../utils/logger';
 
 export class SlackService {
   private webhookUrl: string | undefined;
@@ -46,7 +46,7 @@ export class SlackService {
 
       logger.info('Slack error alert sent', { alert });
     } catch (error) {
-      logger.error('Failed to send Slack error alert', { error, alert });
+      logger.error('Failed to send Slack error alert', { error: serializeError(error), alert });
       // Don't throw - we don't want Slack failures to break the main flow
     }
   }

@@ -1,5 +1,5 @@
 import { TelegramSignalsExecutor } from './app';
-import { logger } from './utils/logger';
+import { logger, serializeError } from './utils/logger';
 
 async function main(): Promise<void> {
   try {
@@ -24,13 +24,13 @@ async function main(): Promise<void> {
     });
     
   } catch (error) {
-    logger.error('Failed to start application', { error });
+    logger.error('Failed to start application', { error: serializeError(error) });
     process.exit(1);
   }
 }
 
 // Start the application
 main().catch((error) => {
-  logger.error('Unhandled error in main', { error });
+  logger.error('Unhandled error in main', { error: serializeError(error) });
   process.exit(1);
 });

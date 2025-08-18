@@ -139,17 +139,38 @@ export class SignalParser {
   ): UpdateSignal {
     const messageHash = this.generateMessageHash(channelId, messageId, 'update');
 
-    return {
-      type: 'update',
+    // Safely parse update price with validation
+    let updatePrice: number | undefined;
+    if (groups['update_price']) {
+      const parsed = parseFloat(groups['update_price']);
+      if (!isNaN(parsed)) {
+        updatePrice = parsed;
+      } else {
+        logger.warn('Invalid update price value', { 
+          updatePrice: groups['update_price'],
+          messageId,
+          channelId 
+        });
+      }
+    }
+
+    const result: UpdateSignal = {
+      type: 'update' as const,
       symbol: groups['symbol'] || '',
       updateType: groups['update_type'] === 'breakeven' ? 'breakeven' : 'explicit',
-      updatePrice: groups['update_price'] ? parseFloat(groups['update_price']) : undefined,
       updateTime: this.parseDateTime(groups['update_time'] || ''),
       messageId,
       channelId,
       messageHash,
       timestamp,
     };
+
+    // Only add updatePrice if it's defined
+    if (updatePrice !== undefined) {
+      result.updatePrice = updatePrice;
+    }
+
+    return result;
   }
 
   /**
@@ -181,12 +202,12 @@ export class SignalParser {
           if (parts.length === 6) {
             const [year, month, day, hour, minute, second] = parts;
             return new Date(
-              parseInt(year),
-              parseInt(month) - 1,
-              parseInt(day),
-              parseInt(hour),
-              parseInt(minute),
-              parseInt(second)
+              parseInt(year || '0'),
+              parseInt(month || '1') - 1,
+              parseInt(day || '1'),
+              parseInt(hour || '0'),
+              parseInt(minute || '0'),
+              parseInt(second || '0')
             );
           }
         }

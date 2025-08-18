@@ -2,7 +2,7 @@
 
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
-import { readline } from 'readline';
+import * as readline from 'readline';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -51,7 +51,7 @@ async function generateSession(): Promise<void> {
       },
     });
 
-    const sessionString = client.session.save() as string;
+    const sessionString = client.session.save();
     
     console.log('\n✅ Session generated successfully!');
     console.log('============================');

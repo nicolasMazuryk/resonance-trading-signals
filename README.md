@@ -120,6 +120,24 @@ npm run session
 3. Follow the prompts to authenticate and get your session string
 4. Add the session string to your `.env` file
 
+## Channel Filtering
+
+To listen only to specific Telegram channels or bots, you can configure channel filtering:
+
+### Configure Allowed Channels
+Add this environment variable to your `.env` file:
+
+```env
+# Channel filtering (comma-separated for multiple values)
+TELEGRAM_ALLOWED_USERNAMES=your_signal_bot
+```
+
+**Examples:**
+- Single bot: `TELEGRAM_ALLOWED_USERNAMES=your_signal_bot`
+- Multiple bots: `TELEGRAM_ALLOWED_USERNAMES=bot1,bot2,channel1`
+
+**Note:** If no filtering is configured, the service will listen to all messages from all chats you have access to.
+
 ## Usage
 
 ### Development
@@ -157,6 +175,7 @@ npm run format
 | `TELEGRAM_API_HASH` | Telegram API Hash | Required |
 | `TELEGRAM_SESSION` | Telegram session string | Required |
 | `TELEGRAM_BOT_ID` | Telegram bot ID | Required |
+| `TELEGRAM_ALLOWED_USERNAMES` | Comma-separated list of allowed usernames | Optional |
 | `EXCHANGE_ID` | CCXT exchange ID | `binanceusdm` |
 | `EXCHANGE_API_KEY` | Exchange API key | Required |
 | `EXCHANGE_API_SECRET` | Exchange API secret | Required |

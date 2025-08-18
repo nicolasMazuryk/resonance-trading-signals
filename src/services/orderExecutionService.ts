@@ -1,6 +1,6 @@
 import { Signal, OpenSignal, Order, OrderSide, OrderType, Analytics } from '../types';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { logger, serializeError } from '../utils/logger';
 import { ExchangeService } from './exchangeService';
 import { FileStorage } from './fileStorage';
 import { SlackService } from './slackService';
@@ -62,7 +62,7 @@ export class OrderExecutionService {
           logger.warn('Unknown signal type', { type: (signal as any).type });
       }
     } catch (error) {
-      logger.error('Failed to process signal', { error, signal });
+      logger.error('Failed to process signal', { error: serializeError(error), signal });
       
       await this.slackService.sendOrderFailureAlert(
         signal.symbol,
@@ -151,7 +151,7 @@ export class OrderExecutionService {
         status: order.status,
       });
     } catch (error) {
-      logger.error('Failed to execute open signal', { error, signal });
+      logger.error('Failed to execute open signal', { error: serializeError(error), signal });
       throw error;
     }
   }
@@ -246,7 +246,7 @@ export class OrderExecutionService {
         slippageUsdt,
       });
     } catch (error) {
-      logger.error('Failed to calculate analytics', { error, orderId: order.id });
+      logger.error('Failed to calculate analytics', { error: serializeError(error), orderId: order.id });
     }
   }
 
@@ -291,11 +291,11 @@ export class OrderExecutionService {
             });
           }
         } catch (error) {
-          logger.error('Failed to monitor order', { error, orderId: order.id });
+          logger.error('Failed to monitor order', { error: serializeError(error), orderId: order.id });
         }
       }
     } catch (error) {
-      logger.error('Failed to monitor pending orders', { error });
+      logger.error('Failed to monitor pending orders', { error: serializeError(error) });
     }
   }
 }

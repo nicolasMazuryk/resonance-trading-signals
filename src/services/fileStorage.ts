@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { Signal, Order, Analytics } from '../types';
-import { logger } from '../utils/logger';
+import { logger, serializeError } from '../utils/logger';
 
 export class FileStorage {
   private dataDir: string;
@@ -46,7 +46,7 @@ export class FileStorage {
       const content = readFileSync(filePath, 'utf8');
       return JSON.parse(content);
     } catch (error) {
-      logger.error('Failed to read file', { error, filePath });
+      logger.error('Failed to read file', { error: serializeError(error), filePath });
       return [];
     }
   }
@@ -55,7 +55,7 @@ export class FileStorage {
     try {
       writeFileSync(filePath, JSON.stringify(data, null, 2));
     } catch (error) {
-      logger.error('Failed to write file', { error, filePath });
+      logger.error('Failed to write file', { error: serializeError(error), filePath });
       throw error;
     }
   }

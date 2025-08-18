@@ -1,4 +1,4 @@
-import { logger } from './utils/logger';
+import { logger, serializeError, serializeObject } from './utils/logger';
 
 import { FileStorage } from './services/fileStorage';
 import { ExchangeService } from './services/exchangeService';
@@ -65,7 +65,7 @@ export class TelegramSignalsExecutor {
       this.setupGracefulShutdown();
 
     } catch (error) {
-      logger.error('Failed to start application', { error });
+      logger.error('Failed to start application', { error: serializeError(error) });
       
       await this.slackService.sendStartupFailureAlert(
         error instanceof Error ? error.message : String(error)
@@ -98,7 +98,7 @@ export class TelegramSignalsExecutor {
 
       logger.info('Telegram Signals Executor stopped successfully');
     } catch (error) {
-      logger.error('Error stopping application', { error });
+      logger.error('Error stopping application', { error: serializeError(error) });
       throw error;
     }
   }
@@ -122,7 +122,7 @@ export class TelegramSignalsExecutor {
         messageHash: signal.messageHash,
       });
     } catch (error) {
-      logger.error('Failed to handle signal', { error, signal });
+      logger.error('Failed to handle signal', { error: serializeError(error), signal });
       
       await this.slackService.sendOrderFailureAlert(
         signal.symbol,
@@ -141,7 +141,7 @@ export class TelegramSignalsExecutor {
       try {
         await this.orderExecutionService.monitorPendingOrders();
       } catch (error) {
-        logger.error('Order monitoring error', { error });
+        logger.error('Order monitoring error', { error: serializeError(error) });
       }
     }, 30000);
 
@@ -159,7 +159,7 @@ export class TelegramSignalsExecutor {
         await this.stop();
         process.exit(0);
       } catch (error) {
-        logger.error('Error during graceful shutdown', { error });
+        logger.error('Error during graceful shutdown', { error: serializeError(error) });
         process.exit(1);
       }
     };
@@ -170,7 +170,7 @@ export class TelegramSignalsExecutor {
 
     // Handle uncaught exceptions
     process.on('uncaughtException', async (error) => {
-      logger.error('Uncaught exception', { error });
+      logger.error('Uncaught exception', { error: serializeError(error) });
       
       await this.slackService.sendUncaughtExceptionAlert(error);
 
@@ -180,7 +180,10 @@ export class TelegramSignalsExecutor {
 
     // Handle unhandled promise rejections
     process.on('unhandledRejection', async (reason, promise) => {
-      logger.error('Unhandled promise rejection', { reason, promise });
+      logger.error('Unhandled promise rejection', { 
+        reason: serializeError(reason), 
+        promise: serializeObject(promise) 
+      });
       
       await this.slackService.sendUnhandledRejectionAlert(reason);
     });
