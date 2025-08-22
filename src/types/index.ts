@@ -21,28 +21,28 @@ export interface OpenSignal extends BaseSignal {
   slPrice: number;
   slPercent: number;
   sizeUsdt: number;
-  entryTime: Date;
+  entryTime: string;
 }
 
 export interface CloseSignal extends BaseSignal {
   type: 'close';
   reason: 'Take profit achieved' | 'Stop loss' | 'Breakeven';
   closePrice: number;
-  closeTime: Date;
+  closeTime: string;
 }
 
 export interface PartialSignal extends BaseSignal {
   type: 'partial';
   partialPrice: number;
   partialPercent: number;
-  partialTime: Date;
+  partialTime: string;
 }
 
 export interface UpdateSignal extends BaseSignal {
   type: 'update';
   updateType: 'breakeven' | 'explicit';
   updatePrice?: number;
-  updateTime: Date;
+  updateTime: string;
 }
 
 export type Signal = OpenSignal | CloseSignal | PartialSignal | UpdateSignal;
@@ -96,4 +96,50 @@ export interface HealthStatus {
   telegram: boolean;
   exchange: boolean;
   timestamp: Date;
+}
+
+// New types for position tracking
+export interface Position {
+  id: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  currentPrice: number;
+  sizeUsdt: number;
+  remainingSizeUsdt: number; // After partial closes
+  quantity: number;
+  remainingQuantity: number; // After partial closes
+  stopLossPrice: number;
+  takeProfitPrice: number;
+  status: 'open' | 'closed';
+  entryTime: Date;
+  closeTime?: Date;
+  closePrice?: number;
+  closeReason?: 'Take profit achieved' | 'Stop loss' | 'Breakeven';
+  realizedPnL?: number;
+  unrealizedPnL?: number;
+  partialCloses: PartialClose[];
+  breakevenPrice: number; // Calculated breakeven after partial closes
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PartialClose {
+  id: string;
+  positionId: string;
+  closePrice: number;
+  closeQuantity: number;
+  closeSizeUsdt: number;
+  closePercent: number; // e.g., 30%
+  realizedPnL: number;
+  closeTime: Date;
+}
+
+export interface PositionUpdate {
+  id: string;
+  positionId: string;
+  updateType: 'stop_loss' | 'take_profit' | 'breakeven';
+  oldValue: number;
+  newValue: number;
+  updateTime: Date;
 }

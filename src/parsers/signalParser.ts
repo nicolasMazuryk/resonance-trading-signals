@@ -86,9 +86,9 @@ export class SignalParser {
       const sizeUsdt = parseFloat(sizeMatch[1]);
 
       // Extract entry time
-      const timeMatch = messageText.match(/(?:🕒\s*)?Entry time:\s*([\d\-:\sGMT\+]+)/);
+      const timeMatch = messageText.match(/(?:🕒\s*)?Entry time:\s*([\d\-:T\.Z\sGMT\+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
-      const entryTime = this.parseDateTime(timeMatch[1]);
+      const entryTime = this.convertToISOFormat(timeMatch[1].trim());
 
       const messageHash = this.generateMessageHash(channelId, messageId, 'open');
 
@@ -169,9 +169,9 @@ export class SignalParser {
       const closePrice = parseFloat(priceMatch[1]);
 
       // Extract close time
-      const timeMatch = messageText.match(/(?:🕒|⏰)?\s*(?:Closing time|Closing):\s*([\d\-:\sGMT\+]+)/);
+      const timeMatch = messageText.match(/Closing time:\s*([\d\-\s:GMT\+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
-      const closeTime = this.parseDateTime(timeMatch[1]);
+      const closeTime = this.convertToISOFormat(timeMatch[1].trim());
 
       const messageHash = this.generateMessageHash(channelId, messageId, 'close');
 
@@ -220,9 +220,9 @@ export class SignalParser {
       const partialPercent = parseFloat(percentMatch[1]);
 
       // Extract time
-      const timeMatch = messageText.match(/(?:⏰\s*)?Time:\s*([\d\-:\sGMT\+]+)/);
+      const timeMatch = messageText.match(/(?:⏰\s*)?Time:\s*([\d\-:T\.Z\sGMT\+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
-      const partialTime = this.parseDateTime(timeMatch[1]);
+      const partialTime = this.convertToISOFormat(timeMatch[1].trim());
 
       const messageHash = this.generateMessageHash(channelId, messageId, 'partial');
 
@@ -272,9 +272,9 @@ export class SignalParser {
       }
 
       // Extract update time
-      const timeMatch = messageText.match(/(?:⏰\s*)?Update time:\s*([\d\-:\sGMT\+]+)/);
+      const timeMatch = messageText.match(/(?:⏰\s*)?Update time:\s*([\d\-:T\.Z\sGMT\+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
-      const updateTime = this.parseDateTime(timeMatch[1]);
+      const updateTime = this.convertToISOFormat(timeMatch[1].trim());
 
       const messageHash = this.generateMessageHash(channelId, messageId, 'update');
 
@@ -306,51 +306,39 @@ export class SignalParser {
   }
 
   /**
-   * Parse datetime string from Telegram message to Date object
-   * Handles various formats like "2024-01-15 14:30:00 GMT+0"
+   * Convert time string from "2025-08-14 02:05:00 GMT+0" format to ISO format "2025-08-14T02:05:00.000Z"
+   * The input time is already in GMT+0 timezone, so no timezone conversion is needed
    */
-  private static parseDateTime(dateTimeStr: string): Date {
+  private static convertToISOFormat(timeStr: string): string {
     try {
       // Remove GMT+0 and normalize
-      const normalized = dateTimeStr.replace(/\s*GMT\+0\s*$/, '').trim();
+      const normalized = timeStr.replace(/\s*GMT\+0\s*$/, '').trim();
       
-      // Try parsing as ISO format first
-      const isoDate = new Date(normalized);
-      if (!isNaN(isoDate.getTime())) {
-        return isoDate;
+      // If it's already in ISO format, return as is
+      if (timeStr.includes('T') && timeStr.includes('Z')) {
+        return timeStr;
       }
-
-      // Try parsing common formats
-      const formats = [
-        /(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/, // 2024-01-15 14:30:00
-        /(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/, // 15-01-2024 14:30:00
-        /(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/, // 15/01/2024 14:30:00
-      ];
-
-      for (const format of formats) {
-        const match = normalized.match(format);
-        if (match) {
-          const [, ...parts] = match;
-          if (parts.length === 6) {
-            const [year, month, day, hour, minute, second] = parts;
-            return new Date(
-              parseInt(year || '0'),
-              parseInt(month || '1') - 1,
-              parseInt(day || '1'),
-              parseInt(hour || '0'),
-              parseInt(minute || '0'),
-              parseInt(second || '0')
-            );
-          }
-        }
+      
+      // Parse the date components manually to avoid timezone conversion
+      // Expected format: "2025-08-14 02:05:00"
+      const dateTimeMatch = normalized.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+      if (dateTimeMatch) {
+        const [, year, month, day, hour, minute, second] = dateTimeMatch;
+        // Create ISO string directly without timezone conversion
+        return `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
       }
-
-      // Fallback to current time if parsing fails
-      logger.warn('Failed to parse datetime', { dateTimeStr, normalized });
-      return new Date();
+      
+      // Fallback to Date parsing if manual parsing fails
+      const date = new Date(normalized);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString();
+      }
+      
+      // If parsing fails, return the original string
+      return timeStr;
     } catch (error) {
-      logger.error('Error parsing datetime', { dateTimeStr, error });
-      return new Date();
+      logger.error('Error converting time format', { timeStr, error });
+      return timeStr;
     }
   }
 
