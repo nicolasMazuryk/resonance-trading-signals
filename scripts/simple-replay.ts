@@ -129,35 +129,6 @@ class SimpleReplayWorkflow {
           last: this.messages[this.messages.length - 1]?.date.toISOString()
         }
       });
-
-    // -------------------------
-    // Save all retrieved messages to a JSON file for inspection/debugging
-    const fs = require('fs');
-    const path = require('path');
-    const outputDir = path.resolve(process.cwd(), 'data');
-    const outputFile = path.join(outputDir, 'historical-messages.json');
-
-    // Ensure the data directory exists
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    // Write messages to file (convert Date objects to ISO strings)
-    fs.writeFileSync(
-      outputFile,
-      JSON.stringify(
-        this.messages.map(msg => ({
-          ...msg,
-          date: msg.date instanceof Date ? msg.date.toISOString() : msg.date
-        })),
-        null,
-        2
-      ),
-      'utf-8'
-    );
-
-    logger.info('Saved all historical messages to JSON file', { file: outputFile });
-    // -------------------------
     } catch (error) {
       logger.error('Failed to retrieve historical messages', { error });
       throw error;
