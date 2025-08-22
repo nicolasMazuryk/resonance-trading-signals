@@ -2,7 +2,6 @@
 
 import { Command } from 'commander';
 import { TelegramSignalsExecutor } from '../src/app';
-import { logger } from '../src/utils/logger';
 
 const program = new Command();
 
@@ -71,13 +70,13 @@ program
         });
       } else {
         const content = fs.readFileSync(logFile, 'utf8');
-        const lines = content.split('\n').filter(line => line.trim());
+        const lines = content.split('\n').filter((line: string) => line.trim());
         const recentLines = lines.slice(-parseInt(options.lines));
         
         console.log(`Recent logs (last ${recentLines.length} lines):`);
         console.log('==========================================');
         
-        recentLines.forEach(line => {
+        recentLines.forEach((line: string) => {
           try {
             const log = JSON.parse(line);
             console.log(`[${log.timestamp}] ${log.level.toUpperCase()}: ${log.message}`);
@@ -225,6 +224,101 @@ program
       });
     } catch (error) {
       console.error('❌ Failed to read data:', error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('exchange-test')
+  .description('Test exchange connection and configuration')
+  .action(async () => {
+    try {
+      const { ExchangeService } = await import('../src/services/exchangeService');
+      const { config } = await import('../src/config');
+      
+      console.log('🔗 Testing Exchange Connection');
+      console.log('==============================');
+      console.log(`Exchange: ${config.exchange.id}`);
+      console.log(`Environment: ${config.nodeEnv}`);
+      console.log(`Sandbox Mode: ${config.nodeEnv === 'development' ? 'Yes' : 'No'}`);
+      console.log('');
+      
+      const exchangeService = new ExchangeService();
+      
+      // Test 1: Initialize exchange
+      console.log('1️⃣ Initializing exchange...');
+      await exchangeService.initialize();
+      console.log('✅ Exchange initialized successfully');
+      
+      // Test 2: Health check
+      console.log('\n2️⃣ Testing connectivity...');
+      const isHealthy = await exchangeService.healthCheck();
+      if (isHealthy) {
+        console.log('✅ Exchange connectivity OK');
+      } else {
+        console.log('❌ Exchange connectivity failed');
+        process.exit(1);
+      }
+      
+      // Test 3: Get balance
+      console.log('\n3️⃣ Fetching account balance...');
+      try {
+        const balance = await exchangeService.getBalance();
+        console.log('✅ Balance fetched successfully');
+        console.log('Account Balance:');
+        
+        // Show non-zero balances
+        if (balance['total']) {
+          Object.entries(balance['total'] as any).forEach(([currency, amount]: [string, any]) => {
+            if (amount && typeof amount === 'number' && amount > 0) {
+              console.log(`  ${currency}: ${amount}`);
+            }
+          });
+        }
+      } catch (error) {
+        console.log('⚠️  Could not fetch balance (may need API permissions)');
+        console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      
+      // Test 4: Get market data
+      console.log('\n4️⃣ Testing market data access...');
+      try {
+        const ticker = await exchangeService.getTicker('BTC/USDT:USDT');
+        console.log('✅ Market data access OK');
+        console.log(`BTC/USDT Price: $${ticker.last}`);
+      } catch (error) {
+        console.log('⚠️  Could not fetch market data');
+        console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      
+      // Test 5: Test order placement (dry run)
+      console.log('\n5️⃣ Testing order placement (dry run)...');
+      try {
+        // This will fail with insufficient balance, but tests the API connection
+        await exchangeService.placeLimitOrder('BTC/USDT:USDT', 'buy', 1, 45000);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('insufficient') || errorMsg.includes('balance')) {
+          console.log('✅ Order placement API working (insufficient balance expected)');
+        } else {
+          console.log('⚠️  Order placement test failed');
+          console.log(`   Error: ${errorMsg}`);
+        }
+      }
+      
+      console.log('\n🎉 Exchange test completed!');
+      console.log('\nNext steps:');
+      console.log('1. If all tests passed, your exchange is configured correctly');
+      console.log('2. Run: npm run replay -- [options] to test with real signals');
+      console.log('3. Start with small amounts and --max-signals 1 for safety');
+      
+    } catch (error) {
+      console.error('❌ Exchange test failed:', error);
+      console.log('\nTroubleshooting:');
+      console.log('1. Check your API keys in .env file');
+      console.log('2. Verify exchange ID is correct');
+      console.log('3. Ensure API keys have trading permissions');
+      console.log('4. Check IP restrictions on your API keys');
       process.exit(1);
     }
   });

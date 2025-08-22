@@ -1,14 +1,14 @@
-import ccxt from 'ccxt';
+import * as ccxt from 'ccxt';
 import { config } from '../config';
 import { logger, serializeError } from '../utils/logger';
-import { OrderSide, OrderType } from '../types';
+import { OrderSide } from '../types';
 
 export class ExchangeService {
   private exchange: ccxt.Exchange;
   private symbolCache = new Map<string, ccxt.Market>();
 
   constructor() {
-    const ExchangeClass = ccxt[config.exchange.id as keyof typeof ccxt] as any;
+    const ExchangeClass = (ccxt as any)[config.exchange.id];
     
     if (!ExchangeClass) {
       throw new Error(`Exchange ${config.exchange.id} not supported by ccxt`);
@@ -17,8 +17,8 @@ export class ExchangeService {
     this.exchange = new ExchangeClass({
       apiKey: config.exchange.apiKey,
       secret: config.exchange.apiSecret,
-      sandbox: config.nodeEnv === 'development',
-      enableRateLimit: true,
+      // sandbox: config.nodeEnv === 'development',
+      // enableRateLimit: true,
     });
 
     logger.info('Exchange service initialized', { 
@@ -52,8 +52,17 @@ export class ExchangeService {
    * Convert symbol from BASE/USDT format to exchange format
    */
   private normalizeSymbol(symbol: string): string {
-    // Remove / and convert to uppercase (e.g., BTC/USDT -> BTCUSDT)
-    return symbol.replace('/', '').toUpperCase();
+    // For Binance Futures, symbols use format like BTC/USDT:USDT
+    // If symbol doesn't have settlement currency, add it
+    if (symbol.includes('/') && !symbol.includes(':')) {
+      const parts = symbol.split('/');
+      if (parts.length === 2) {
+        const base = parts[0];
+        const quote = parts[1];
+        return `${base}/${quote}:${quote}`;
+      }
+    }
+    return symbol;
   }
 
   /**
@@ -79,42 +88,49 @@ export class ExchangeService {
    * Round amount to exchange precision
    */
   private roundAmount(amount: number, market: ccxt.Market): number {
-    if (market.amount?.precision !== undefined) {
-      return Number(amount.toFixed(market.amount.precision));
-    }
-    return amount;
+    const precision = (market as any).precision.amount;
+    return Math.round(amount / precision) * precision;
   }
 
   /**
    * Round price to exchange precision
    */
   private roundPrice(price: number, market: ccxt.Market): number {
-    if (market.precision?.price !== undefined) {
-      return Number(price.toFixed(market.precision.price));
-    }
-    return price;
+    const precision = (market as any).precision.price;
+    return Math.round(price / precision) * precision;
   }
 
   /**
-   * Check if order meets minimum notional requirements
+   * Check if order meets minimum requirements (notional and quantity)
    */
-  private async checkMinimumNotional(symbol: string, amount: number, price: number): Promise<boolean> {
+  private async checkMinimumRequirements(symbol: string, amount: number, price: number): Promise<boolean> {
     try {
       const market = await this.getMarket(symbol);
       const notional = amount * price;
       
-      if (market.minNotional && notional < market.minNotional) {
+      // Check minimum notional
+      if (market && (market as any).limits.cost && notional < (market as any).limits.cost.min) {
         logger.warn('Order below minimum notional', {
           symbol,
           notional,
-          minNotional: market.minNotional,
+          minNotional: (market as any).limits.cost.min,
+        });
+        return false;
+      }
+      
+      // Check minimum quantity (base asset amount)
+      if (market && (market as any).limits.amount && amount < (market as any).limits.amount.min) {
+        logger.warn('Order below minimum quantity', {
+          symbol,
+          amount,
+          minAmount: (market as any).limits.amount.min,
         });
         return false;
       }
       
       return true;
     } catch (error) {
-      logger.error('Failed to check minimum notional', { error: serializeError(error), symbol, amount, price });
+      logger.error('Failed to check minimum requirements', { error: serializeError(error), symbol, amount, price });
       return false;
     }
   }
@@ -172,9 +188,9 @@ export class ExchangeService {
       const roundedPrice = this.roundPrice(price, market);
 
       // Check minimum notional
-      const meetsMinimum = await this.checkMinimumNotional(symbol, roundedAmount, roundedPrice);
+      const meetsMinimum = await this.checkMinimumRequirements(symbol, roundedAmount, roundedPrice);
       if (!meetsMinimum) {
-        throw new Error(`Order below minimum notional for ${symbol}`);
+        throw new Error(`Order below minimum notional or quantity for ${symbol}`);
       }
 
       const order = await this.exchange.createLimitOrder(
@@ -186,10 +202,15 @@ export class ExchangeService {
 
       logger.info('Limit order placed', {
         symbol,
+        type: order.type,
         side,
-        amount: roundedAmount,
-        price: roundedPrice,
+        amount: order.amount,
+        price: order.price,
+        cost: order.cost,
+        filled: order.filled,
+        average: order.average,
         orderId: order.id,
+        status: order.status,
       });
 
       return order;

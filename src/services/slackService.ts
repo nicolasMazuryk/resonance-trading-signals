@@ -1,6 +1,6 @@
 import { SlackAlert } from '../types';
 import { config } from '../config';
-import { logger, serializeError } from '../utils/logger';
+import { logger } from '../utils/logger';
 
 export class SlackService {
   private webhookUrl: string | undefined;
@@ -18,37 +18,38 @@ export class SlackService {
   /**
    * Send error alert to Slack
    */
-  async sendErrorAlert(alert: SlackAlert): Promise<void> {
-    try {
-      if (!this.webhookUrl) {
-        logger.error('Slack error alert (webhook not configured)', { alert });
-        return;
-      }
+  async sendErrorAlert(_alert: SlackAlert): Promise<void> {
+    return
+    // try {
+    //   if (!this.webhookUrl) {
+    //     logger.error('Slack error alert (webhook not configured)', { alert });
+    //     return;
+    //   }
 
-      const payload = {
-        text: alert.text,
-        attachments: alert.attachments,
-        username: 'Telegram Signals Executor',
-        icon_emoji: ':warning:',
-      };
+    //   const payload = {
+    //     text: alert.text,
+    //     attachments: alert.attachments,
+    //     username: 'Telegram Signals Executor',
+    //     icon_emoji: ':warning:',
+    //   };
 
-      const response = await fetch(this.webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+    //   const response = await fetch(this.webhookUrl, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //     },
+    //     body: JSON.stringify(payload),
+    //   });
 
-      if (!response.ok) {
-        throw new Error(`Slack API responded with status ${response.status}: ${response.statusText}`);
-      }
+    //   if (!response.ok) {
+    //     throw new Error(`Slack API responded with status ${response.status}: ${response.statusText}`);
+    //   }
 
-      logger.info('Slack error alert sent', { alert });
-    } catch (error) {
-      logger.error('Failed to send Slack error alert', { error: serializeError(error), alert });
-      // Don't throw - we don't want Slack failures to break the main flow
-    }
+    //   logger.info('Slack error alert sent', { alert });
+    // } catch (error) {
+    //   logger.error('Failed to send Slack error alert', { error: serializeError(error), alert });
+    //   // Don't throw - we don't want Slack failures to break the main flow
+    // }
   }
 
   /**

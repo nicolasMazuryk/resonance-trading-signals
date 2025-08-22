@@ -7,9 +7,6 @@ const logFormat = winston.format.combine(
   winston.format.printf(({ timestamp, level, message, error, ...meta }) => {
     // Handle error separately to avoid Winston's automatic serialization
     const logData: any = {
-      timestamp,
-      level,
-      message,
       ...meta
     };
     
@@ -18,20 +15,21 @@ const logFormat = winston.format.combine(
       logData.error = error;
     }
     
-    return JSON.stringify(logData);
+    // Only include JSON if there are values
+    const hasValues = Object.keys(logData).length > 0;
+    const jsonString = hasValues ? `\n${JSON.stringify(logData, null, 2)}` : '';
+    
+    // Format: [timestamp] [LEVEL] message json
+    return `[${timestamp}] [${level.toUpperCase()}] ${message}${jsonString}`;
   })
 );
 
 export const logger = winston.createLogger({
   level: config.nodeEnv === 'production' ? 'info' : 'debug',
   format: logFormat,
-  defaultMeta: { service: 'telegram-signals-executor' },
   transports: [
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      ),
+      format: logFormat,
     }),
     new winston.transports.File({
       filename: 'logs/error.log',

@@ -103,7 +103,7 @@ export class FileStorage {
     const index = orders.findIndex(o => o.id === orderId);
     
     if (index !== -1) {
-      orders[index] = { ...orders[index], ...updates, updatedAt: new Date() };
+      orders[index] = { ...orders[index], ...updates, updatedAt: new Date() } as Order;
       this.writeFile(this.ordersFile, orders);
       logger.info('Order updated', { orderId, updates });
     }

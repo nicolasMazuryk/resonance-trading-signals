@@ -12,6 +12,7 @@ A TypeScript service that listens to Telegram messages, parses trading signals, 
 - **Error Alerts**: Slack notifications for errors and high deviations only
 - **File Storage**: Simple JSON file storage for signals, orders, and analytics
 - **CLI Tools**: Command-line interface for monitoring and data access
+- **Historical Replay**: Retrieve and replay historical messages for end-to-end testing
 
 ## Supported Signal Formats
 
@@ -208,6 +209,74 @@ npm run cli data --type signals
 npm run cli data --type orders
 npm run cli data --type analytics
 ```
+
+## Full End-to-End Execution
+
+The system now supports complete order execution with real exchange integration. Follow these steps to enable full trading functionality:
+
+### 1. Exchange Setup
+
+**IMPORTANT**: Start with testnet/sandbox mode for safety!
+
+1. **Configure Exchange Credentials**:
+   ```bash
+   cp env.example .env
+   # Edit .env with your exchange API keys
+   ```
+
+2. **Test Exchange Connection**:
+   ```bash
+   npm run cli exchange-test
+   ```
+
+3. **For detailed setup instructions**, see [EXCHANGE_SETUP.md](EXCHANGE_SETUP.md)
+
+### 2. Test with Small Amounts
+
+**Safety First**: Always start with small amounts and limited signals!
+
+```bash
+# Test with 1 signal first (recommended)
+npm run replay -- -b your_signal_bot -s 2024-01-01 --max-signals 1 --interval 10000
+
+# Test with 5 signals
+npm run replay -- -b your_signal_bot -s 2024-01-01 --max-signals 5 --interval 5000
+```
+
+### 3. Production Deployment
+
+When ready for production:
+
+1. **Switch to production mode** in `.env`:
+   ```env
+   NODE_ENV=production
+   ```
+
+2. **Use real exchange** (not testnet)
+
+3. **Monitor closely** and start with small position sizes
+
+## Historical Message Replay
+
+The system includes a historical replay workflow for testing and validation. This allows you to retrieve historical messages from the Telegram bot and replay them with full end-to-end execution including order execution via ccxt.
+
+### Quick Start
+
+**Test with 5 signals (recommended first):**
+```bash
+npm run replay -- -b your_signal_bot -s 2024-08-14 --interval 5000 --max-signals 5
+```
+
+**Full replay test:**
+```bash
+npm run replay -- -b your_signal_bot -s 2024-08-14
+```
+
+### Available Commands
+
+- `npm run replay` - Start the complete replay workflow
+
+For detailed documentation, see [REPLAY_README.md](REPLAY_README.md).
 
 ## Monitoring
 

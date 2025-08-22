@@ -423,4 +423,11 @@ export class TelegramService {
   getSessionString(): string {
     return this.client.session.save() as unknown as string;
   }
+
+  /**
+   * Get the Telegram client instance (for internal use)
+   */
+  getClient(): TelegramClient {
+    return this.client;
+  }
 }

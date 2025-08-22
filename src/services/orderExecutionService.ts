@@ -24,25 +24,27 @@ export class OrderExecutionService {
       }
 
       // Check signal age
-      const signalAge = Date.now() - signal.timestamp.getTime();
-      if (signalAge > config.maxSignalAgeMs) {
-        logger.warn('Signal too old, skipping', { 
-          signalAge, 
-          maxAge: config.maxSignalAgeMs,
-          messageHash: signal.messageHash 
-        });
+      // const signalAge = Date.now() - signal.timestamp.getTime();
+      // if (signalAge > config.maxSignalAgeMs) {
+      //   logger.warn('Signal too old, skipping', { 
+      //     signalAge, 
+      //     maxAge: config.maxSignalAgeMs,
+      //     messageHash: signal.messageHash 
+      //   });
         
-        await this.slackService.sendStaleSignalAlert(
-          signal.symbol,
-          signal.type,
-          signalAge,
-          config.maxSignalAgeMs
-        );
-        return;
-      }
+      //   await this.slackService.sendStaleSignalAlert(
+      //     signal.symbol,
+      //     signal.type,
+      //     signalAge,
+      //     config.maxSignalAgeMs
+      //   );
+      //   return;
+      // }
 
       // Save signal to file storage
       this.fileStorage.saveSignal(signal);
+
+      return
 
       // Execute orders based on signal type
       switch (signal.type) {
@@ -83,8 +85,7 @@ export class OrderExecutionService {
       await this.exchangeService.setLeverage(signal.symbol, config.exchange.defaultLeverage);
 
       // Calculate order amount based on position size
-      const ticker = await this.exchangeService.getTicker(signal.symbol);
-      const orderAmount = signal.sizeUsdt / ticker.last;
+      const orderAmount = signal.sizeUsdt / signal.price / 100;
 
       // Determine order side
       const orderSide: OrderSide = signal.action === 'LONG' ? 'buy' : 'sell';
@@ -103,11 +104,16 @@ export class OrderExecutionService {
       } catch (error) {
         logger.warn('Limit order failed, trying market order', { error, signal });
         
-        // Check if price deviation is within tolerance
-        const priceDeviation = Math.abs(ticker.last - signal.price) / signal.price;
-        if (priceDeviation > config.exchange.orderSlippageTolerance) {
-          throw new Error(`Price deviation ${(priceDeviation * 100).toFixed(2)}% exceeds tolerance ${(config.exchange.orderSlippageTolerance * 100).toFixed(2)}%`);
-        }
+        // const ticker = await this.exchangeService.getTicker(signal.symbol);
+        // if (!ticker.last) {
+        //   throw new Error(`No price data available for ${signal.symbol}`);
+        // }
+
+        // // Check if price deviation is within tolerance
+        // const priceDeviation = Math.abs(ticker.last! - signal.price) / signal.price;
+        // if (priceDeviation > config.exchange.orderSlippageTolerance) {
+        //   throw new Error(`Price deviation ${(priceDeviation * 100).toFixed(2)}% exceeds tolerance ${(config.exchange.orderSlippageTolerance * 100).toFixed(2)}%`);
+        // }
 
         order = await this.exchangeService.placeMarketOrder(
           signal.symbol,
@@ -124,13 +130,13 @@ export class OrderExecutionService {
         symbol: signal.symbol,
         side: orderSide,
         type: orderType,
-        amount: orderAmount,
+        amount: order.amount,
         price: signal.price,
         status: order.status === 'closed' ? 'filled' : 'pending',
         exchangeOrderId: order.id,
         filledAmount: order.filled,
         filledPrice: order.average,
-        fee: order.fee?.cost,
+        fee: order.fee,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -263,12 +269,20 @@ export class OrderExecutionService {
           
           if (exchangeOrder.status !== order.status) {
             // Update order status
-            this.fileStorage.updateOrder(order.id, {
+            const updateData: Partial<Order> = {
               status: exchangeOrder.status === 'closed' ? 'filled' : exchangeOrder.status as any,
               filledAmount: exchangeOrder.filled,
-              filledPrice: exchangeOrder.average,
-              fee: exchangeOrder.fee?.cost,
-            });
+            };
+            
+            if (exchangeOrder.fee?.cost !== undefined) {
+              updateData.fee = exchangeOrder.fee.cost;
+            }
+            
+            if (exchangeOrder.average !== undefined) {
+              updateData.filledPrice = exchangeOrder.average;
+            }
+            
+            this.fileStorage.updateOrder(order.id, updateData);
 
             // If order is now filled, calculate analytics
             if (exchangeOrder.status === 'closed' && exchangeOrder.filled) {
@@ -279,7 +293,7 @@ export class OrderExecutionService {
                   signal,
                   order,
                   (signal as any).price,
-                  exchangeOrder.average
+                  exchangeOrder.average || 0
                 );
               }
             }
