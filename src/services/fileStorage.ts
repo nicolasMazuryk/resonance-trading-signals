@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { Signal, Order, Analytics, Position, PartialClose, PositionUpdate, ConditionalOrder } from '../types';
+import { Signal, Order, Analytics, Position, PartialClose, PositionUpdate, ConditionalOrder, PositionAnalytics, OverallAnalytics } from '../types';
 import { logger, serializeError } from '../utils/logger';
 
 export class FileStorage {
@@ -8,6 +8,8 @@ export class FileStorage {
   private signalsFile: string;
   private ordersFile: string;
   private analyticsFile: string;
+  private positionAnalyticsFile: string;
+  private overallAnalyticsFile: string;
   private positionsFile: string;
   private partialClosesFile: string;
   private positionUpdatesFile: string;
@@ -18,6 +20,8 @@ export class FileStorage {
     this.signalsFile = join(this.dataDir, 'signals.json');
     this.ordersFile = join(this.dataDir, 'orders.json');
     this.analyticsFile = join(this.dataDir, 'analytics.json');
+    this.positionAnalyticsFile = join(this.dataDir, 'position-analytics.json');
+    this.overallAnalyticsFile = join(this.dataDir, 'overall-analytics.json');
     this.positionsFile = join(this.dataDir, 'positions.json');
     this.partialClosesFile = join(this.dataDir, 'partial-closes.json');
     this.positionUpdatesFile = join(this.dataDir, 'position-updates.json');
@@ -39,6 +43,8 @@ export class FileStorage {
       { path: this.signalsFile, default: [] },
       { path: this.ordersFile, default: [] },
       { path: this.analyticsFile, default: [] },
+      { path: this.positionAnalyticsFile, default: [] },
+      { path: this.overallAnalyticsFile, default: [] },
       { path: this.positionsFile, default: [] },
       { path: this.partialClosesFile, default: [] },
       { path: this.positionUpdatesFile, default: [] },
@@ -135,9 +141,7 @@ export class FileStorage {
     return orders.filter(o => o.status === status);
   }
 
-  getPendingOrders(): Order[] {
-    return this.getOrdersByStatus('pending');
-  }
+
 
   // Analytics operations
   saveAnalytics(analytics: Analytics): void {
@@ -159,6 +163,55 @@ export class FileStorage {
   getHighDeviationAnalytics(threshold: number = 2): Analytics[] {
     const analytics = this.readFile<Analytics>(this.analyticsFile);
     return analytics.filter(a => Math.abs(a.priceDeviationPercent) > threshold);
+  }
+
+  // New comprehensive analytics operations
+  savePositionAnalytics(analytics: PositionAnalytics): void {
+    const analyticsList = this.readFile<PositionAnalytics>(this.positionAnalyticsFile);
+    analyticsList.push(analytics);
+    this.writeFile(this.positionAnalyticsFile, analyticsList);
+    logger.info('Position analytics saved', { analyticsId: analytics.id, positionId: analytics.positionId });
+  }
+
+  getPositionAnalytics(): PositionAnalytics[] {
+    return this.readFile<PositionAnalytics>(this.positionAnalyticsFile);
+  }
+
+  getPositionAnalyticsByPosition(positionId: string): PositionAnalytics | undefined {
+    const analytics = this.readFile<PositionAnalytics>(this.positionAnalyticsFile);
+    return analytics.find(a => a.positionId === positionId);
+  }
+
+  getPositionAnalyticsBySymbol(symbol: string): PositionAnalytics[] {
+    const analytics = this.readFile<PositionAnalytics>(this.positionAnalyticsFile);
+    return analytics.filter(a => a.symbol === symbol);
+  }
+
+  updatePositionAnalytics(positionId: string, updates: Partial<PositionAnalytics>): void {
+    const analytics = this.readFile<PositionAnalytics>(this.positionAnalyticsFile);
+    const index = analytics.findIndex(a => a.positionId === positionId);
+    if (index !== -1) {
+      analytics[index] = { ...analytics[index], ...updates, updatedAt: new Date() } as PositionAnalytics;
+      this.writeFile(this.positionAnalyticsFile, analytics);
+      logger.info('Position analytics updated', { positionId, updates });
+    }
+  }
+
+  saveOverallAnalytics(analytics: OverallAnalytics): void {
+    const analyticsList = this.readFile<OverallAnalytics>(this.overallAnalyticsFile);
+    analyticsList.push(analytics);
+    this.writeFile(this.overallAnalyticsFile, analyticsList);
+    logger.info('Overall analytics saved', { analyticsId: analytics.id, period: analytics.period });
+  }
+
+  getOverallAnalytics(): OverallAnalytics[] {
+    return this.readFile<OverallAnalytics>(this.overallAnalyticsFile);
+  }
+
+  getLatestOverallAnalytics(period: OverallAnalytics['period'] = 'all_time'): OverallAnalytics | undefined {
+    const analytics = this.readFile<OverallAnalytics>(this.overallAnalyticsFile);
+    const filtered = analytics.filter(a => a.period === period);
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   }
 
   // Position operations

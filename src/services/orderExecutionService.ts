@@ -1,20 +1,25 @@
-import { Signal, OpenSignal, Order, OrderSide, Analytics, PartialSignal, UpdateSignal, CloseSignal } from '../types';
+import { Signal, OpenSignal, Order, OrderSide, PartialSignal, UpdateSignal, CloseSignal } from '../types';
 import { config } from '../config';
 import { logger, serializeError } from '../utils/logger';
 import { ExchangeService } from './exchangeService';
 import { FileStorage } from './fileStorage';
 import { SlackService } from './slackService';
 import { PositionService } from './positionService';
+import { AnalyticsService } from './analyticsService';
 import { ConditionalOrder } from '../types';
-import { calculateTakerFee, calculateMakerFee } from '../utils/feeCalculator';
+import { calculateTakerFee } from '../utils/feeCalculator';
 
 export class OrderExecutionService {
+  private analyticsService: AnalyticsService;
+
   constructor(
     private exchangeService: ExchangeService,
     private fileStorage: FileStorage,
     private slackService: SlackService,
     private positionService: PositionService
-  ) {}
+  ) {
+    this.analyticsService = new AnalyticsService(fileStorage);
+  }
 
   /**
    * Process a signal and execute orders
@@ -338,6 +343,27 @@ export class OrderExecutionService {
 
       const updatedPosition = this.positionService.handlePositionClose(signal, closeData);
 
+      // Create Order object for analytics
+      const closeOrder: Order = {
+        id: order.id,
+        signalId: signal.messageHash,
+        symbol: signal.symbol,
+        side: orderSide,
+        type: 'market',
+        amount: roundedCloseQuantity,
+        price: signal.closePrice,
+        status: order.status as 'pending' | 'filled' | 'cancelled' | 'failed',
+        exchangeOrderId: order.id,
+        createdAt: new Date(order.timestamp),
+        updatedAt: new Date(),
+        ...(order.filled && { filledAmount: order.filled }),
+        ...(order.average && { filledPrice: order.average }),
+        ...(order.fee?.cost && { fee: order.fee.cost })
+      };
+
+      // Update position exit analytics
+      await this.analyticsService.updatePositionExitAnalytics(updatedPosition, closeOrder, signal.closePrice);
+
       logger.info('Position closed', { 
         positionId: updatedPosition.id, 
         closeReason: signal.reason,
@@ -378,11 +404,29 @@ export class OrderExecutionService {
     }
 
     // Step 1: Place market order to open the position
-    const marketOrder = await this.exchangeService.placeMarketOrder(
+    const ccxtMarketOrder = await this.exchangeService.placeMarketOrder(
       signal.symbol,
       orderSide,
       roundedOrderAmount
     );
+
+    // Create our custom Order object from CCXT order
+    const marketOrder: Order = {
+      id: ccxtMarketOrder.id,
+      signalId: signal.messageHash,
+      symbol: signal.symbol,
+      side: orderSide,
+      type: 'market',
+      amount: roundedOrderAmount,
+      price: signal.price,
+      status: ccxtMarketOrder.status as 'pending' | 'filled' | 'cancelled' | 'failed',
+      exchangeOrderId: ccxtMarketOrder.id,
+      createdAt: new Date(ccxtMarketOrder.timestamp),
+      updatedAt: new Date(),
+      ...(ccxtMarketOrder.filled && { filledAmount: ccxtMarketOrder.filled }),
+      ...(ccxtMarketOrder.average && { filledPrice: ccxtMarketOrder.average }),
+      ...(ccxtMarketOrder.fee?.cost && { fee: ccxtMarketOrder.fee.cost })
+    };
 
     // Calculate fees for the market order (taker fee)
     const marketOrderFee = calculateTakerFee(roundedOrderAmount, signal.price, config.exchange.fees.taker);
@@ -451,6 +495,9 @@ export class OrderExecutionService {
     this.fileStorage.saveConditionalOrder(stopLossConditionalOrder);
     this.fileStorage.saveConditionalOrder(takeProfitConditionalOrder);
 
+    // Calculate position entry analytics
+    await this.analyticsService.calculatePositionEntryAnalytics(signal, position, marketOrder);
+
     logger.info('Market order executed with separate stop-loss and take-profit orders', {
       symbol: signal.symbol,
       side: orderSide,
@@ -464,148 +511,5 @@ export class OrderExecutionService {
     });
   }
 
-  /**
-   * Calculate analytics for order execution
-   */
-  private async calculateAnalytics(
-    signal: Signal,
-    order: Order,
-    signalPrice: number,
-    executionPrice: number
-  ): Promise<void> {
-    try {
-      const executionTime = new Date();
-      const executionDelayMs = executionTime.getTime() - signal.timestamp.getTime();
-      const priceDeviationPercent = ((executionPrice - signalPrice) / signalPrice) * 100;
-      
-      // Get order details for slippage calculation
-      if (!order.filledAmount) {
-        logger.warn('Cannot calculate analytics - order not filled', { orderId: order.id });
-        return;
-      }
 
-      const slippageUsdt = (executionPrice - signalPrice) * order.filledAmount;
-
-      // Calculate trading fee based on order type
-      const tradingFee = order.type === 'market' 
-        ? calculateTakerFee(order.filledAmount || 0, executionPrice, config.exchange.fees.taker)
-        : calculateMakerFee(order.filledAmount || 0, executionPrice, config.exchange.fees.maker);
-
-      // Create analytics object
-      const analytics: Analytics = {
-        id: `${order.id}-analytics`,
-        signalId: signal.messageHash,
-        orderId: order.id,
-        symbol: order.symbol,
-        signalType: signal.type,
-        signalPrice,
-        executionPrice,
-        priceDeviationPercent,
-        executionDelayMs,
-        slippageUsdt,
-        tradingFee,
-        createdAt: executionTime,
-      };
-
-      // Save analytics
-      this.fileStorage.saveAnalytics(analytics);
-
-      // Check for high deviation and alert
-      if (Math.abs(priceDeviationPercent) > 2) {
-        await this.slackService.sendHighDeviationAlert(
-          order.symbol,
-          priceDeviationPercent,
-          signalPrice,
-          executionPrice,
-          executionDelayMs
-        );
-      }
-
-      logger.info('Analytics calculated', {
-        orderId: order.id,
-        priceDeviationPercent,
-        executionDelayMs,
-        slippageUsdt,
-        calculatedTradingFee: tradingFee,
-        feeRate: order.type === 'market' ? config.exchange.fees.taker : config.exchange.fees.maker,
-      });
-    } catch (error) {
-      logger.error('Failed to calculate analytics', { error: serializeError(error), orderId: order.id });
-    }
-  }
-
-  /**
-   * Monitor and update pending orders
-   */
-  async monitorPendingOrders(): Promise<void> {
-    try {
-      const pendingOrders = this.fileStorage.getPendingOrders();
-      
-      for (const order of pendingOrders) {
-        try {
-          const exchangeOrder = await this.exchangeService.getOrder(order.symbol, order.exchangeOrderId!);
-          
-          if (exchangeOrder.status !== order.status) {
-            // Update order status
-            const updateData: Partial<Order> = {
-              status: exchangeOrder.status === 'closed' ? 'filled' : exchangeOrder.status as any,
-              filledAmount: exchangeOrder.filled,
-            };
-            
-            if (exchangeOrder.fee?.cost !== undefined) {
-              updateData.fee = exchangeOrder.fee.cost;
-            }
-            
-            if (exchangeOrder.average !== undefined) {
-              updateData.filledPrice = exchangeOrder.average;
-            }
-            
-            this.fileStorage.updateOrder(order.id, updateData);
-
-            // If order is now filled, calculate analytics
-            if (exchangeOrder.status === 'closed' && exchangeOrder.filled) {
-              const signals = this.fileStorage.getSignals();
-              const signal = signals.find(s => s.messageHash === order.signalId);
-              if (signal && signal.type === 'open') {
-                await this.calculateAnalytics(
-                  signal,
-                  order,
-                  (signal as any).price,
-                  exchangeOrder.average || 0
-                );
-              }
-            }
-
-            logger.info('Order status updated', {
-              orderId: order.id,
-              oldStatus: order.status,
-              newStatus: exchangeOrder.status,
-            });
-          }
-        } catch (error) {
-          logger.error('Failed to monitor order', { error: serializeError(error), orderId: order.id });
-        }
-      }
-    } catch (error) {
-      logger.error('Failed to monitor pending orders', { error: serializeError(error) });
-    }
-  }
-
-  /**
-   * Get current positions summary
-   */
-  getPositionsSummary(): {
-    openPositions: number;
-    totalPnL: number;
-    positions: any[];
-  } {
-    const openPositions = this.positionService.getOpenPositions();
-    const totalPnL = openPositions.reduce((sum, pos) => sum + (pos.unrealizedPnL || 0), 0);
-    
-    return {
-      openPositions: openPositions.length,
-      totalPnL,
-      positions: openPositions
-    };
-  }
 }

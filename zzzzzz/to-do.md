@@ -1,22 +1,8 @@
-- track positions
-- partial close 30%
 
-- calculate breakeven after 30%
+- end-to-end testing
 
-- move stop-loss order
-
-3. calculate and track trading fees everywhere
-
-------------------
-
-
-
------
-- logs (levels, messages), error handling, alerts
+- alerts
 - deployment
-
-- analytics
-   - actual price execution
 
 ----- refactor
 1. remove unnecessary data (channelId)

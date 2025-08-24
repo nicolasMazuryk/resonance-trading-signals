@@ -1,6 +1,6 @@
 # Telegram Crypto Signals Executor
 
-A TypeScript service that listens to Telegram messages, parses trading signals, and executes orders on crypto exchanges via ccxt. Features comprehensive analytics, Slack alerts, and a REST API for monitoring.
+A TypeScript service that listens to Telegram messages, parses trading signals, and executes orders on crypto exchanges via ccxt. Features comprehensive analytics and Slack alerts.
 
 ## Features
 
@@ -11,7 +11,7 @@ A TypeScript service that listens to Telegram messages, parses trading signals, 
 - **Analytics**: Tracks price deviations, execution delays, and slippage
 - **Error Alerts**: Slack notifications for errors and high deviations only
 - **File Storage**: Simple JSON file storage for signals, orders, and analytics
-- **CLI Tools**: Command-line interface for monitoring and data access
+- **CLI Tools**: Command-line interface for data access
 - **Historical Replay**: Retrieve and replay historical messages for end-to-end testing
 
 ## Supported Signal Formats
@@ -254,7 +254,7 @@ When ready for production:
 
 2. **Use real exchange** (not testnet)
 
-3. **Monitor closely** and start with small position sizes
+3. **Check logs closely** and start with small position sizes
 
 ## Historical Message Replay
 
@@ -278,9 +278,7 @@ npm run replay -- -b your_signal_bot -s 2024-08-14
 
 For detailed documentation, see [REPLAY_README.md](REPLAY_README.md).
 
-## Monitoring
-
-### Error Alerts (Slack)
+## Error Alerts (Slack)
 - Signal parsing failures
 - Order execution failures
 - High price deviations (>2%)

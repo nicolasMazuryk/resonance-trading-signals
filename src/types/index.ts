@@ -80,6 +80,104 @@ export interface Analytics {
   createdAt: Date;
 }
 
+// New comprehensive analytics system
+export interface PositionAnalytics {
+  id: string;
+  positionId: string;
+  signalId: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  
+  // Signal vs Execution comparison
+  signalEntryPrice: number;
+  actualEntryPrice: number;
+  entrySlippage: number; // in USDT
+  entrySlippagePercent: number;
+  entryFees: number;
+  
+  // Exit information (if position is closed)
+  signalExitPrice?: number;
+  actualExitPrice?: number;
+  exitSlippage?: number; // in USDT
+  exitSlippagePercent?: number;
+  exitFees?: number;
+  
+  // Position performance
+  totalFees: number;
+  totalSlippage: number;
+  realizedPnL: number;
+  unrealizedPnL?: number;
+  totalPnL: number; // realized + unrealized
+  
+  // Trade classification
+  tradeResult: 'profitable' | 'breakeven' | 'loss';
+  profitPercent?: number;
+  
+  // Timing
+  entryTime: Date;
+  exitTime?: Date;
+  durationMs?: number;
+  
+  // Execution quality
+  entryExecutionDelayMs: number;
+  exitExecutionDelayMs?: number;
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface OverallAnalytics {
+  id: string;
+  period: 'daily' | 'weekly' | 'monthly' | 'all_time';
+  startDate: Date;
+  endDate: Date;
+  
+  // Signal counts
+  totalSignals: number;
+  openSignals: number;
+  closedSignals: number;
+  
+  // Trade results
+  profitableTrades: number;
+  profitableTradesPercent: number;
+  breakevenTrades: number;
+  breakevenTradesPercent: number;
+  lossTrades: number;
+  lossTradesPercent: number;
+  
+  // Financial metrics
+  totalSlippage: number;
+  totalFees: number;
+  totalPnL: number;
+  totalRealizedPnL: number;
+  totalUnrealizedPnL: number;
+  
+  // Performance metrics
+  averageSlippage: number;
+  averageFees: number;
+  averagePnL: number;
+  winRate: number; // profitable trades / total trades
+  
+  // Execution quality
+  averageExecutionDelayMs: number;
+  averageEntrySlippagePercent: number;
+  averageExitSlippagePercent: number;
+  
+  // Symbol breakdown
+  symbolBreakdown: {
+    [symbol: string]: {
+      totalTrades: number;
+      profitableTrades: number;
+      totalPnL: number;
+      totalSlippage: number;
+      totalFees: number;
+    };
+  };
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface SlackAlert {
   text: string;
   attachments?: Array<{

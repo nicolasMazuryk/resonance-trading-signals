@@ -94,8 +94,8 @@ Set `NODE_ENV=development` to enable sandbox/testnet mode.
 ### 2. Set Low Leverage
 Start with `DEFAULT_LEVERAGE=1` or `DEFAULT_LEVERAGE=2`.
 
-### 3. Monitor Orders
-The system includes order monitoring and will log all activities.
+### 3. Check Logs
+The system will log all order activities for review.
 
 ### 4. Set Position Limits
 Consider implementing position size limits in your exchange account.

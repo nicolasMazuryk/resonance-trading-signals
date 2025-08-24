@@ -140,9 +140,8 @@ When ready for production:
 1. **Signal Parsing**: Parse Telegram messages into structured signals
 2. **Exchange Integration**: Connect to exchange via CCXT
 3. **Order Placement**: Attempt limit orders, fallback to market orders
-4. **Order Monitoring**: Track order status and execution
-5. **Analytics**: Calculate price deviations and execution metrics
-6. **Alerts**: Send notifications for errors and high deviations
+4. **Analytics**: Calculate price deviations and execution metrics
+5. **Alerts**: Send notifications for errors and high deviations
 
 ### Safety Features
 
@@ -156,7 +155,6 @@ When ready for production:
 
 ### Real-time Monitoring
 
-- **Order Status**: Track pending, filled, and failed orders
 - **Price Deviations**: Monitor execution vs signal prices
 - **Execution Delays**: Measure time from signal to execution
 - **Success Rates**: Track order execution success percentages
@@ -200,7 +198,6 @@ npm run cli data --type analytics
 - **Position Limits**: Start with small position sizes
 - **Leverage Limits**: Use conservative leverage settings
 - **Stop Losses**: Implement automatic stop-loss orders
-- **Monitoring**: Continuous monitoring of positions and orders
 
 ### Testing Strategy
 
@@ -216,7 +213,7 @@ npm run cli data --type analytics
 1. **Configure Exchange**: Set up your exchange credentials
 2. **Test Connection**: Run exchange connection test
 3. **Small Test**: Execute with 1-2 signals in sandbox mode
-4. **Monitor Results**: Verify order execution and analytics
+4. **Verify Results**: Check order execution and analytics
 
 ### Future Enhancements
 

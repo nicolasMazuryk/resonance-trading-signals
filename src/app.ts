@@ -16,7 +16,6 @@ export class TelegramSignalsExecutor {
   private positionService: PositionService;
   private orderExecutionService: OrderExecutionService;
   private isRunning = false;
-  private orderMonitoringInterval: NodeJS.Timeout | undefined;
 
   constructor() {
     // Initialize services
@@ -56,9 +55,7 @@ export class TelegramSignalsExecutor {
       });
       logger.info('Telegram message listener started');
 
-      // Start order monitoring
-      this.startOrderMonitoring();
-      logger.info('Order monitoring started');
+
 
       // No startup notification - only error alerts
 
@@ -88,11 +85,7 @@ export class TelegramSignalsExecutor {
 
       this.isRunning = false;
 
-      // Stop order monitoring
-      if (this.orderMonitoringInterval) {
-        clearInterval(this.orderMonitoringInterval);
-        this.orderMonitoringInterval = undefined;
-      }
+
 
       // Disconnect Telegram
       await this.telegramService.disconnect();
@@ -136,21 +129,7 @@ export class TelegramSignalsExecutor {
     }
   }
 
-  /**
-   * Start order monitoring
-   */
-  private startOrderMonitoring(): void {
-    // Monitor pending orders every 30 seconds
-    this.orderMonitoringInterval = setInterval(async () => {
-      try {
-        await this.orderExecutionService.monitorPendingOrders();
-      } catch (error) {
-        logger.error('Order monitoring error', { error: serializeError(error) });
-      }
-    }, 30000);
 
-    logger.info('Order monitoring interval started (30s)');
-  }
 
   /**
    * Setup graceful shutdown handlers

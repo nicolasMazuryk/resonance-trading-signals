@@ -176,7 +176,7 @@ Update time: 2024-01-15 14:35:00 GMT+0`;
 program
   .command('data')
   .description('View stored data')
-  .option('-t, --type <type>', 'Data type to view (signals|orders|analytics)', 'signals')
+  .option('-t, --type <type>', 'Data type to view (signals|orders|analytics|position-analytics|overall-analytics)', 'signals')
   .option('-s, --symbol <symbol>', 'Filter by symbol')
   .option('-l, --limit <number>', 'Limit number of results', '10')
   .action(async (options) => {
@@ -202,8 +202,16 @@ program
             ? storage.getAnalyticsBySymbol(options.symbol)
             : storage.getAnalytics();
           break;
+        case 'position-analytics':
+          data = options.symbol
+            ? storage.getPositionAnalyticsBySymbol(options.symbol)
+            : storage.getPositionAnalytics();
+          break;
+        case 'overall-analytics':
+          data = storage.getOverallAnalytics();
+          break;
         default:
-          console.error('❌ Invalid data type. Use: signals, orders, or analytics');
+          console.error('❌ Invalid data type. Use: signals, orders, analytics, position-analytics, or overall-analytics');
           process.exit(1);
       }
       
@@ -224,6 +232,125 @@ program
       });
     } catch (error) {
       console.error('❌ Failed to read data:', error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('analytics')
+  .description('Generate and view analytics')
+  .option('-p, --period <period>', 'Analytics period (daily|weekly|monthly|all_time)', 'all_time')
+  .option('-s, --start-date <date>', 'Start date (YYYY-MM-DD)')
+  .option('-e, --end-date <date>', 'End date (YYYY-MM-DD)')
+  .option('-g, --generate', 'Generate new analytics')
+  .action(async (options) => {
+    try {
+      const { FileStorage } = await import('../src/services/fileStorage');
+      const { AnalyticsService } = await import('../src/services/analyticsService');
+      
+      const storage = new FileStorage();
+      const analyticsService = new AnalyticsService(storage);
+      
+      if (options.generate) {
+        console.log('🔄 Generating analytics...');
+        
+        let startDate: Date | undefined;
+        let endDate: Date | undefined;
+        
+        if (options.startDate && options.endDate) {
+          startDate = new Date(options.startDate);
+          endDate = new Date(options.endDate);
+        }
+        
+        const analytics = await analyticsService.calculateOverallAnalytics(
+          options.period as any,
+          startDate,
+          endDate
+        );
+        
+        console.log('✅ Analytics generated successfully!');
+        console.log('\n📊 Overall Analytics Summary:');
+        console.log('=============================');
+        console.log(`Period: ${analytics.period}`);
+        console.log(`Date Range: ${new Date(analytics.startDate).toISOString().split('T')[0]} to ${new Date(analytics.endDate).toISOString().split('T')[0]}`);
+        console.log(`Total Signals: ${analytics.totalSignals}`);
+        console.log(`Open Signals: ${analytics.openSignals}`);
+        console.log(`Closed Signals: ${analytics.closedSignals}`);
+        console.log('\n📈 Trade Results:');
+        console.log(`Profitable Trades: ${analytics.profitableTrades} (${analytics.profitableTradesPercent.toFixed(1)}%)`);
+        console.log(`Breakeven Trades: ${analytics.breakevenTrades} (${analytics.breakevenTradesPercent.toFixed(1)}%)`);
+        console.log(`Loss Trades: ${analytics.lossTrades} (${analytics.lossTradesPercent.toFixed(1)}%)`);
+        console.log(`Win Rate: ${analytics.winRate.toFixed(1)}%`);
+        console.log('\n💰 Financial Metrics:');
+        console.log(`Total PnL: $${analytics.totalPnL.toFixed(2)}`);
+        console.log(`Total Slippage: $${analytics.totalSlippage.toFixed(2)}`);
+        console.log(`Total Fees: $${analytics.totalFees.toFixed(2)}`);
+        console.log(`Average PnL per Trade: $${analytics.averagePnL.toFixed(2)}`);
+        console.log(`Average Slippage per Trade: $${analytics.averageSlippage.toFixed(2)}`);
+        console.log(`Average Fees per Trade: $${analytics.averageFees.toFixed(2)}`);
+        console.log('\n⚡ Execution Quality:');
+        console.log(`Average Execution Delay: ${analytics.averageExecutionDelayMs.toFixed(0)}ms`);
+        console.log(`Average Entry Slippage: ${analytics.averageEntrySlippagePercent.toFixed(2)}%`);
+        console.log(`Average Exit Slippage: ${analytics.averageExitSlippagePercent.toFixed(2)}%`);
+        
+        if (Object.keys(analytics.symbolBreakdown).length > 0) {
+          console.log('\n📊 Symbol Breakdown:');
+          Object.entries(analytics.symbolBreakdown).forEach(([symbol, breakdown]) => {
+            console.log(`\n${symbol}:`);
+            console.log(`  Total Trades: ${breakdown.totalTrades}`);
+            console.log(`  Profitable Trades: ${breakdown.profitableTrades}`);
+            console.log(`  Total PnL: $${breakdown.totalPnL.toFixed(2)}`);
+            console.log(`  Total Slippage: $${breakdown.totalSlippage.toFixed(2)}`);
+            console.log(`  Total Fees: $${breakdown.totalFees.toFixed(2)}`);
+          });
+        }
+      } else {
+        // View existing analytics
+        const analytics = analyticsService.getLatestOverallAnalytics(options.period as any);
+        
+        if (!analytics) {
+          console.log('❌ No analytics found for the specified period. Use --generate to create new analytics.');
+          return;
+        }
+        
+        console.log('📊 Overall Analytics Summary:');
+        console.log('=============================');
+        console.log(`Period: ${analytics.period}`);
+        console.log(`Date Range: ${new Date(analytics.startDate).toISOString().split('T')[0]} to ${new Date(analytics.endDate).toISOString().split('T')[0]}`);
+        console.log(`Total Signals: ${analytics.totalSignals}`);
+        console.log(`Open Signals: ${analytics.openSignals}`);
+        console.log(`Closed Signals: ${analytics.closedSignals}`);
+        console.log('\n📈 Trade Results:');
+        console.log(`Profitable Trades: ${analytics.profitableTrades} (${analytics.profitableTradesPercent.toFixed(1)}%)`);
+        console.log(`Breakeven Trades: ${analytics.breakevenTrades} (${analytics.breakevenTradesPercent.toFixed(1)}%)`);
+        console.log(`Loss Trades: ${analytics.lossTrades} (${analytics.lossTradesPercent.toFixed(1)}%)`);
+        console.log(`Win Rate: ${analytics.winRate.toFixed(1)}%`);
+        console.log('\n💰 Financial Metrics:');
+        console.log(`Total PnL: $${analytics.totalPnL.toFixed(2)}`);
+        console.log(`Total Slippage: $${analytics.totalSlippage.toFixed(2)}`);
+        console.log(`Total Fees: $${analytics.totalFees.toFixed(2)}`);
+        console.log(`Average PnL per Trade: $${analytics.averagePnL.toFixed(2)}`);
+        console.log(`Average Slippage per Trade: $${analytics.averageSlippage.toFixed(2)}`);
+        console.log(`Average Fees per Trade: $${analytics.averageFees.toFixed(2)}`);
+        console.log('\n⚡ Execution Quality:');
+        console.log(`Average Execution Delay: ${analytics.averageExecutionDelayMs.toFixed(0)}ms`);
+        console.log(`Average Entry Slippage: ${analytics.averageEntrySlippagePercent.toFixed(2)}%`);
+        console.log(`Average Exit Slippage: ${analytics.averageExitSlippagePercent.toFixed(2)}%`);
+        
+        if (Object.keys(analytics.symbolBreakdown).length > 0) {
+          console.log('\n📊 Symbol Breakdown:');
+          Object.entries(analytics.symbolBreakdown).forEach(([symbol, breakdown]) => {
+            console.log(`\n${symbol}:`);
+            console.log(`  Total Trades: ${breakdown.totalTrades}`);
+            console.log(`  Profitable Trades: ${breakdown.profitableTrades}`);
+            console.log(`  Total PnL: $${breakdown.totalPnL.toFixed(2)}`);
+            console.log(`  Total Slippage: $${breakdown.totalSlippage.toFixed(2)}`);
+            console.log(`  Total Fees: $${breakdown.totalFees.toFixed(2)}`);
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to generate/view analytics:', error);
       process.exit(1);
     }
   });
