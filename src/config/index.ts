@@ -20,6 +20,10 @@ export interface Config {
     apiSecret: string;
     defaultLeverage: number;
     orderSlippageTolerance: number;
+    fees: {
+      taker: number; // 0.05% = 0.0005
+      maker: number; // 0.02% = 0.0002
+    };
   };
   maxSignalAgeMs: number;
   slack: {
@@ -49,6 +53,10 @@ const getConfig = (): Config => {
         apiSecret: process.env['EXCHANGE_API_SECRET'] || 'test_api_secret',
         defaultLeverage: parseInt(process.env['DEFAULT_LEVERAGE'] || '10'),
         orderSlippageTolerance: parseFloat(process.env['ORDER_SLIPPAGE_TOLERANCE'] || '0.2'),
+        fees: {
+          taker: parseFloat(process.env['TAKER_FEE'] || '0.0005'), // 0.05%
+          maker: parseFloat(process.env['MAKER_FEE'] || '0.0002'), // 0.02%
+        },
       },
       maxSignalAgeMs: parseInt(process.env['MAX_SIGNAL_AGE_MS'] || '90000'),
       slack: {
@@ -74,6 +82,10 @@ const getConfig = (): Config => {
       apiSecret: process.env['EXCHANGE_API_SECRET'] || '',
       defaultLeverage: parseInt(process.env['DEFAULT_LEVERAGE'] || '10'),
       orderSlippageTolerance: parseFloat(process.env['ORDER_SLIPPAGE_TOLERANCE'] || '0.2'),
+      fees: {
+        taker: parseFloat(process.env['TAKER_FEE'] || '0.0005'), // 0.05%
+        maker: parseFloat(process.env['MAKER_FEE'] || '0.0002'), // 0.02%
+      },
     },
     maxSignalAgeMs: parseInt(process.env['MAX_SIGNAL_AGE_MS'] || '90000'),
           slack: {

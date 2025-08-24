@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { Signal, Order, Analytics, Position, PartialClose, PositionUpdate } from '../types';
+import { Signal, Order, Analytics, Position, PartialClose, PositionUpdate, ConditionalOrder } from '../types';
 import { logger, serializeError } from '../utils/logger';
 
 export class FileStorage {
@@ -11,6 +11,7 @@ export class FileStorage {
   private positionsFile: string;
   private partialClosesFile: string;
   private positionUpdatesFile: string;
+  private conditionalOrdersFile: string;
 
   constructor() {
     this.dataDir = join(process.cwd(), 'data');
@@ -20,6 +21,7 @@ export class FileStorage {
     this.positionsFile = join(this.dataDir, 'positions.json');
     this.partialClosesFile = join(this.dataDir, 'partial-closes.json');
     this.positionUpdatesFile = join(this.dataDir, 'position-updates.json');
+    this.conditionalOrdersFile = join(this.dataDir, 'conditional-orders.json');
 
     this.ensureDataDir();
     this.initializeFiles();
@@ -40,6 +42,7 @@ export class FileStorage {
       { path: this.positionsFile, default: [] },
       { path: this.partialClosesFile, default: [] },
       { path: this.positionUpdatesFile, default: [] },
+      { path: this.conditionalOrdersFile, default: [] },
     ];
 
     files.forEach(({ path, default: defaultValue }) => {
@@ -232,6 +235,33 @@ export class FileStorage {
   getPositionUpdatesByPosition(positionId: string): PositionUpdate[] {
     const updates = this.readFile<PositionUpdate>(this.positionUpdatesFile);
     return updates.filter(u => u.positionId === positionId);
+  }
+
+  // Conditional order operations
+  saveConditionalOrder(order: ConditionalOrder): void {
+    const conditionalOrders = this.readFile<ConditionalOrder>(this.conditionalOrdersFile);
+    conditionalOrders.push(order);
+    this.writeFile(this.conditionalOrdersFile, conditionalOrders);
+    logger.info('Conditional order saved', { orderId: order.id });
+  }
+
+  updateConditionalOrder(orderId: string, updates: Partial<ConditionalOrder>): void {
+    const conditionalOrders = this.readFile<ConditionalOrder>(this.conditionalOrdersFile);
+    const index = conditionalOrders.findIndex(co => co.id === orderId);
+    if (index !== -1) {
+      conditionalOrders[index] = { ...conditionalOrders[index], ...updates } as ConditionalOrder;
+      this.writeFile(this.conditionalOrdersFile, conditionalOrders);
+      logger.info('Conditional order updated', { orderId, updates });
+    }
+  }
+
+  getConditionalOrders(): ConditionalOrder[] {
+    return this.readFile<ConditionalOrder>(this.conditionalOrdersFile);
+  }
+
+  getConditionalOrdersByPosition(positionId: string): ConditionalOrder[] {
+    const conditionalOrders = this.readFile<ConditionalOrder>(this.conditionalOrdersFile);
+    return conditionalOrders.filter(co => co.positionId === positionId);
   }
 
   getSummaryStats(): {

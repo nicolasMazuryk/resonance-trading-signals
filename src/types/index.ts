@@ -123,6 +123,9 @@ export interface Position {
   breakevenPrice: number; // Calculated breakeven after partial closes
   fee?: number;
   exchangeOrderId?: string;
+  // New fields for tracking stop-loss and take-profit orders
+  stopLossOrderId?: string;
+  takeProfitOrderId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -147,4 +150,19 @@ export interface PositionUpdate {
   oldValue: number;
   newValue: number;
   updateTime: Date;
+}
+
+// New type for tracking conditional orders
+export interface ConditionalOrder {
+  id: string;
+  positionId: string;
+  symbol: string;
+  type: 'stop_loss' | 'take_profit';
+  side: OrderSide;
+  amount: number;
+  price: number;
+  status: 'pending' | 'filled' | 'cancelled' | 'failed';
+  exchangeOrderId: string;
+  createdAt: Date;
+  updatedAt: Date;
 }

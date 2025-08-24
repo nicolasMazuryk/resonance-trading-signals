@@ -5,6 +5,8 @@ import { ExchangeService } from './exchangeService';
 import { FileStorage } from './fileStorage';
 import { SlackService } from './slackService';
 import { PositionService } from './positionService';
+import { ConditionalOrder } from '../types';
+import { calculateTakerFee, calculateMakerFee } from '../utils/feeCalculator';
 
 export class OrderExecutionService {
   constructor(
@@ -131,10 +133,13 @@ export class OrderExecutionService {
         roundedCloseQuantity
       );
 
-      // Update partial close with actual executed quantity and fees
+      // Calculate fees for the partial close (taker fee for market order)
+      const partialCloseFee = calculateTakerFee(roundedCloseQuantity, signal.partialPrice, config.exchange.fees.taker);
+      
+      // Update partial close with actual executed quantity and calculated fees
       latestPartialClose.closeQuantity = roundedCloseQuantity;
       latestPartialClose.closeSizeUsdt = roundedCloseQuantity * signal.partialPrice;
-      latestPartialClose.fee = order.fee?.cost || 0;
+      latestPartialClose.fee = partialCloseFee;
       latestPartialClose.exchangeOrderId = order.id;
       
       // Update position with actual remaining quantities
@@ -148,7 +153,9 @@ export class OrderExecutionService {
         positionId: position.id, 
         closeQuantity: roundedCloseQuantity, 
         closePrice: signal.partialPrice,
-        fee: latestPartialClose.fee
+        calculatedFee: partialCloseFee,
+        feeRate: config.exchange.fees.taker,
+        remainingQuantity: position.remainingQuantity
       });
     } catch (error) {
       logger.error('Failed to execute partial signal', { error: serializeError(error), signal });
@@ -164,20 +171,59 @@ export class OrderExecutionService {
       // Update position tracking
       const position = this.positionService.handleStopLossUpdate(signal);
 
-      // Implement stop-loss order update on exchange
+      // Cancel existing stop-loss order
+      if (position.stopLossOrderId) {
+        try {
+          await this.exchangeService.cancelOrder(signal.symbol, position.stopLossOrderId);
+          this.fileStorage.updateConditionalOrder(`sl_${position.id}`, { status: 'cancelled' });
+          logger.info('Existing stop-loss order cancelled for breakeven update', {
+            positionId: position.id,
+            oldStopLossOrderId: position.stopLossOrderId
+          });
+        } catch (error) {
+          logger.warn('Failed to cancel existing stop-loss order', { 
+            error: serializeError(error), 
+            stopLossOrderId: position.stopLossOrderId 
+          });
+        }
+      }
+
+      // Place new stop-loss order at breakeven price
       const orderSide = position.side === 'LONG' ? 'sell' : 'buy';
-      await this.exchangeService.updateStopLoss(
+      const newStopLossOrder = await this.exchangeService.placeStopLossOrder(
         signal.symbol,
-        position.stopLossPrice,
+        orderSide,
         position.remainingQuantity,
-        orderSide
+        position.stopLossPrice // This is now the breakeven price
       );
+
+      // Update position with new stop-loss order ID
+      position.stopLossOrderId = newStopLossOrder.id;
+      this.fileStorage.updatePosition(position.id, position);
+
+      // Save new conditional order
+      const newStopLossConditionalOrder: ConditionalOrder = {
+        id: `sl_${position.id}_breakeven`,
+        positionId: position.id,
+        symbol: signal.symbol,
+        type: 'stop_loss',
+        side: orderSide,
+        amount: position.remainingQuantity,
+        price: position.stopLossPrice,
+        status: 'pending',
+        exchangeOrderId: newStopLossOrder.id,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      this.fileStorage.saveConditionalOrder(newStopLossConditionalOrder);
 
       logger.info('Stop-loss updated to breakeven', { 
         positionId: position.id, 
         newStopLoss: position.stopLossPrice,
         remainingQuantity: position.remainingQuantity,
-        side: orderSide
+        side: orderSide,
+        newStopLossOrderId: newStopLossOrder.id
       });
     } catch (error) {
       logger.error('Failed to execute update signal', { error: serializeError(error), signal });
@@ -194,6 +240,65 @@ export class OrderExecutionService {
       const position = this.positionService.getPosition(signal.symbol);
       if (!position) {
         throw new Error(`No open position found for ${signal.symbol}`);
+      }
+
+      // Cancel conditional orders based on close reason
+      if (signal.reason === 'Take profit achieved') {
+        // Cancel stop-loss order since take-profit was hit
+        if (position.stopLossOrderId) {
+          try {
+            await this.exchangeService.cancelOrder(signal.symbol, position.stopLossOrderId);
+            this.fileStorage.updateConditionalOrder(`sl_${position.id}`, { status: 'cancelled' });
+            logger.info('Stop-loss order cancelled due to take-profit achievement', {
+              positionId: position.id,
+              stopLossOrderId: position.stopLossOrderId
+            });
+          } catch (error) {
+            logger.warn('Failed to cancel stop-loss order', { 
+              error: serializeError(error), 
+              stopLossOrderId: position.stopLossOrderId 
+            });
+          }
+        }
+      } else if (signal.reason === 'Stop loss') {
+        // Cancel take-profit order since stop-loss was hit
+        if (position.takeProfitOrderId) {
+          try {
+            await this.exchangeService.cancelOrder(signal.symbol, position.takeProfitOrderId);
+            this.fileStorage.updateConditionalOrder(`tp_${position.id}`, { status: 'cancelled' });
+            logger.info('Take-profit order cancelled due to stop-loss hit', {
+              positionId: position.id,
+              takeProfitOrderId: position.takeProfitOrderId
+            });
+          } catch (error) {
+            logger.warn('Failed to cancel take-profit order', { 
+              error: serializeError(error), 
+              takeProfitOrderId: position.takeProfitOrderId 
+            });
+          }
+        }
+      } else if (signal.reason === 'Breakeven') {
+        // Cancel take-profit order since we're closing at breakeven
+        if (position.takeProfitOrderId) {
+          try {
+            await this.exchangeService.cancelOrder(signal.symbol, position.takeProfitOrderId);
+            this.fileStorage.updateConditionalOrder(`tp_${position.id}`, { status: 'cancelled' });
+            logger.info('Take-profit order cancelled due to breakeven close', {
+              positionId: position.id,
+              takeProfitOrderId: position.takeProfitOrderId
+            });
+          } catch (error) {
+            logger.warn('Failed to cancel take-profit order', { 
+              error: serializeError(error), 
+              takeProfitOrderId: position.takeProfitOrderId 
+            });
+          }
+        }
+        // Note: Stop-loss order is already at breakeven price, so we don't cancel it
+        logger.info('Take-profit order cancelled due to breakeven close', {
+          positionId: position.id,
+          closeReason: signal.reason
+        });
       }
 
       // Round the close quantity and check minimum requirements
@@ -220,11 +325,14 @@ export class OrderExecutionService {
         roundedCloseQuantity
       );
 
-      // Update position tracking with actual executed quantity and fees
+      // Calculate fees for the close order (taker fee for market order)
+      const closeOrderFee = calculateTakerFee(roundedCloseQuantity, signal.closePrice, config.exchange.fees.taker);
+      
+      // Update position tracking with actual executed quantity and calculated fees
       const closeData = {
         closeQuantity: roundedCloseQuantity,
         closeSizeUsdt: roundedCloseQuantity * signal.closePrice,
-        fee: order.fee?.cost || 0,
+        fee: closeOrderFee,
         exchangeOrderId: order.id
       };
 
@@ -234,7 +342,8 @@ export class OrderExecutionService {
         positionId: updatedPosition.id, 
         closeReason: signal.reason,
         finalPnL: updatedPosition.realizedPnL,
-        fee: closeData.fee
+        calculatedFee: closeOrderFee,
+        feeRate: config.exchange.fees.taker
       });
     } catch (error) {
       logger.error('Failed to execute close signal', { error: serializeError(error), signal });
@@ -268,32 +377,90 @@ export class OrderExecutionService {
       throw new Error(`Order below minimum notional or quantity for ${signal.symbol}`);
     }
 
-    // Place market order with stop-loss and take-profit
-    const order = await this.exchangeService.placeMarketOrder(
+    // Step 1: Place market order to open the position
+    const marketOrder = await this.exchangeService.placeMarketOrder(
       signal.symbol,
       orderSide,
-      roundedOrderAmount,
-      signal.slPrice,  // Stop-loss price
-      signal.tpPrice   // Take-profit price
+      roundedOrderAmount
     );
 
-    // Update position with actual executed quantity and fees
+    // Calculate fees for the market order (taker fee)
+    const marketOrderFee = calculateTakerFee(roundedOrderAmount, signal.price, config.exchange.fees.taker);
+    
+    // Update position with actual executed quantity and calculated fees
     position.quantity = roundedOrderAmount;
     position.sizeUsdt = roundedOrderAmount * signal.price;
     position.remainingQuantity = roundedOrderAmount;
     position.remainingSizeUsdt = position.sizeUsdt;
-    position.fee = order.fee?.cost || 0;
-    position.exchangeOrderId = order.id;
+    position.fee = marketOrderFee;
+    position.exchangeOrderId = marketOrder.id;
+
+    // Step 2: Place stop-loss order
+    const stopLossOrderSide: OrderSide = signal.action === 'LONG' ? 'sell' : 'buy';
+    const stopLossOrder = await this.exchangeService.placeStopLossOrder(
+      signal.symbol,
+      stopLossOrderSide,
+      roundedOrderAmount,
+      signal.slPrice
+    );
+
+    // Step 3: Place take-profit order
+    const takeProfitOrderSide: OrderSide = signal.action === 'LONG' ? 'sell' : 'buy';
+    const takeProfitOrder = await this.exchangeService.placeTakeProfitOrder(
+      signal.symbol,
+      takeProfitOrderSide,
+      roundedOrderAmount,
+      signal.tpPrice
+    );
+
+    // Update position with conditional order IDs
+    position.stopLossOrderId = stopLossOrder.id;
+    position.takeProfitOrderId = takeProfitOrder.id;
     
     this.fileStorage.updatePosition(position.id, position);
 
-    logger.info('Market order executed with stop-loss and take-profit', {
+    // Save conditional orders for tracking
+    const stopLossConditionalOrder: ConditionalOrder = {
+      id: `sl_${position.id}`,
+      positionId: position.id,
+      symbol: signal.symbol,
+      type: 'stop_loss',
+      side: stopLossOrderSide,
+      amount: roundedOrderAmount,
+      price: signal.slPrice,
+      status: 'pending',
+      exchangeOrderId: stopLossOrder.id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const takeProfitConditionalOrder: ConditionalOrder = {
+      id: `tp_${position.id}`,
+      positionId: position.id,
+      symbol: signal.symbol,
+      type: 'take_profit',
+      side: takeProfitOrderSide,
+      amount: roundedOrderAmount,
+      price: signal.tpPrice,
+      status: 'pending',
+      exchangeOrderId: takeProfitOrder.id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    this.fileStorage.saveConditionalOrder(stopLossConditionalOrder);
+    this.fileStorage.saveConditionalOrder(takeProfitConditionalOrder);
+
+    logger.info('Market order executed with separate stop-loss and take-profit orders', {
       symbol: signal.symbol,
       side: orderSide,
       amount: roundedOrderAmount,
-      fee: position.fee,
+      calculatedFee: marketOrderFee,
+      feeRate: config.exchange.fees.taker,
       stopLossPrice: signal.slPrice,
-      takeProfitPrice: signal.tpPrice
+      takeProfitPrice: signal.tpPrice,
+      stopLossOrderId: stopLossOrder.id,
+      takeProfitOrderId: takeProfitOrder.id
     });
   }
 
@@ -319,6 +486,11 @@ export class OrderExecutionService {
 
       const slippageUsdt = (executionPrice - signalPrice) * order.filledAmount;
 
+      // Calculate trading fee based on order type
+      const tradingFee = order.type === 'market' 
+        ? calculateTakerFee(order.filledAmount || 0, executionPrice, config.exchange.fees.taker)
+        : calculateMakerFee(order.filledAmount || 0, executionPrice, config.exchange.fees.maker);
+
       // Create analytics object
       const analytics: Analytics = {
         id: `${order.id}-analytics`,
@@ -331,7 +503,7 @@ export class OrderExecutionService {
         priceDeviationPercent,
         executionDelayMs,
         slippageUsdt,
-        tradingFee: order.fee || 0,
+        tradingFee,
         createdAt: executionTime,
       };
 
@@ -354,7 +526,8 @@ export class OrderExecutionService {
         priceDeviationPercent,
         executionDelayMs,
         slippageUsdt,
-        tradingFee: order.fee || 0,
+        calculatedTradingFee: tradingFee,
+        feeRate: order.type === 'market' ? config.exchange.fees.taker : config.exchange.fees.maker,
       });
     } catch (error) {
       logger.error('Failed to calculate analytics', { error: serializeError(error), orderId: order.id });

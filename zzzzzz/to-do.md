@@ -5,18 +5,21 @@
 
 - move stop-loss order
 
-
-------------------
-2. in executeUpdateSignal() Implement stop-loss order update on exchange
-
 3. calculate and track trading fees everywhere
 
+------------------
+
+
+
 -----
-- logs, error handling, alerts
+- logs (levels, messages), error handling, alerts
 - deployment
 
 - analytics
+   - actual price execution
 
+----- refactor
+1. remove unnecessary data (channelId)
 
 -----------------------
 Strategy #2

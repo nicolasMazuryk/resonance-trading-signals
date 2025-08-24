@@ -135,37 +135,7 @@ export class ExchangeService {
     }
   }
 
-  /**
-   * Update stop-loss order on exchange
-   */
-  async updateStopLoss(symbol: string, stopLossPrice: number, quantity?: number, side?: OrderSide): Promise<void> {
-    try {
-      // For now, we'll just log the stop-loss update
-      // In a real implementation, you would need to:
-      // 1. Cancel existing stop-loss orders
-      // 2. Place new stop-loss orders at the new price
-      // 3. Handle different exchange APIs for stop-loss management
-      
-      logger.info('Stop-loss updated on exchange', { 
-        symbol, 
-        stopLossPrice,
-        quantity,
-        side,
-        note: 'Implementation depends on exchange-specific stop-loss API'
-      });
-      
-      // TODO: Implement actual stop-loss order update based on exchange
-      // Example for Binance Futures:
-      // if (quantity && side) {
-      //   await this.cancelAllOrders(symbol);
-      //   await this.placeStopLossOrder(symbol, side, quantity, stopLossPrice);
-      // }
-      
-    } catch (error) {
-      logger.error('Failed to update stop-loss on exchange', { error: serializeError(error), symbol, stopLossPrice });
-      throw error;
-    }
-  }
+
 
   /**
    * Set leverage for a symbol (futures only)
@@ -258,9 +228,7 @@ export class ExchangeService {
   async placeMarketOrder(
     symbol: string,
     side: OrderSide,
-    amount: number,
-    stopLossPrice?: number,
-    takeProfitPrice?: number
+    amount: number
   ): Promise<ccxt.Order> {
     try {
       const market = await this.getMarket(symbol);
@@ -268,30 +236,11 @@ export class ExchangeService {
       
       const roundedAmount = this.roundAmount(amount, market);
 
-      // Prepare order parameters
-      const orderParams: any = {};
-      
-      // Add stop-loss if provided
-      if (stopLossPrice !== undefined) {
-        const roundedStopLoss = this.roundPrice(stopLossPrice, market);
-        orderParams.stopLossPrice = roundedStopLoss;
-        logger.debug('Adding stop-loss to order', { symbol, stopLossPrice: roundedStopLoss });
-      }
-      
-      // Add take-profit if provided
-      if (takeProfitPrice !== undefined) {
-        const roundedTakeProfit = this.roundPrice(takeProfitPrice, market);
-        orderParams.takeProfitPrice = roundedTakeProfit;
-        logger.debug('Adding take-profit to order', { symbol, takeProfitPrice: roundedTakeProfit });
-      }
-
       const order = await this.exchange.createOrder(
         normalizedSymbol,
         'market',
         side,
-        roundedAmount,
-        undefined, // price (not needed for market orders)
-        orderParams
+        roundedAmount
       );
 
       logger.info('Market order placed', {
@@ -299,8 +248,6 @@ export class ExchangeService {
         side,
         amount: roundedAmount,
         orderId: order.id,
-        stopLossPrice: orderParams.stopLoss,
-        takeProfitPrice: orderParams.takeProfit,
       });
 
       return order;
@@ -309,10 +256,148 @@ export class ExchangeService {
         error: serializeError(error), 
         symbol, 
         side, 
+        amount
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Place a stop-loss order
+   */
+  async placeStopLossOrder(
+    symbol: string,
+    side: OrderSide,
+    amount: number,
+    stopLossPrice: number
+  ): Promise<ccxt.Order> {
+    try {
+      const market = await this.getMarket(symbol);
+      const normalizedSymbol = this.normalizeSymbol(symbol);
+      
+      const roundedAmount = this.roundAmount(amount, market);
+      const roundedStopLossPrice = this.roundPrice(stopLossPrice, market);
+
+      // For Binance Futures, use stop market order with reduceOnly
+      const order = await this.exchange.createOrder(
+        normalizedSymbol,
+        'stop_market',
+        side,
+        roundedAmount,
+        undefined, // price not needed for market orders
+        {
+          stopPrice: roundedStopLossPrice,
+          reduceOnly: true
+        }
+      );
+
+      logger.info('Stop-loss order placed', {
+        symbol,
+        side,
+        amount: roundedAmount,
+        stopLossPrice: roundedStopLossPrice,
+        orderId: order.id,
+        reduceOnly: true,
+        orderType: 'stop_market'
+      });
+
+      return order;
+    } catch (error) {
+      logger.error('Failed to place stop-loss order', { 
+        error: serializeError(error), 
+        symbol, 
+        side, 
         amount,
-        stopLossPrice,
+        stopLossPrice
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Place a take-profit order
+   */
+  async placeTakeProfitOrder(
+    symbol: string,
+    side: OrderSide,
+    amount: number,
+    takeProfitPrice: number
+  ): Promise<ccxt.Order> {
+    try {
+      const market = await this.getMarket(symbol);
+      const normalizedSymbol = this.normalizeSymbol(symbol);
+      
+      const roundedAmount = this.roundAmount(amount, market);
+      const roundedTakeProfitPrice = this.roundPrice(takeProfitPrice, market);
+
+      // For Binance Futures, use take profit market order with reduceOnly
+      const order = await this.exchange.createOrder(
+        normalizedSymbol,
+        'take_profit_market',
+        side,
+        roundedAmount,
+        undefined, // price not needed for market orders
+        {
+          stopPrice: roundedTakeProfitPrice,
+          reduceOnly: true
+        }
+      );
+
+      logger.info('Take-profit order placed', {
+        symbol,
+        side,
+        amount: roundedAmount,
+        takeProfitPrice: roundedTakeProfitPrice,
+        orderId: order.id,
+        reduceOnly: true,
+        orderType: 'take_profit_market'
+      });
+
+      return order;
+    } catch (error) {
+      logger.error('Failed to place take-profit order', { 
+        error: serializeError(error), 
+        symbol, 
+        side, 
+        amount,
         takeProfitPrice
       });
+      throw error;
+    }
+  }
+
+  /**
+   * Cancel all orders for a symbol
+   */
+  async cancelAllOrders(symbol: string): Promise<ccxt.Order[]> {
+    try {
+      const normalizedSymbol = this.normalizeSymbol(symbol);
+      const cancelledOrders = await this.exchange.cancelAllOrders(normalizedSymbol);
+      
+      logger.info('All orders cancelled', { 
+        symbol, 
+        cancelledCount: cancelledOrders.length 
+      });
+      
+      return cancelledOrders;
+    } catch (error) {
+      logger.error('Failed to cancel all orders', { error: serializeError(error), symbol });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all open orders for a symbol
+   */
+  async getOpenOrders(symbol: string): Promise<ccxt.Order[]> {
+    try {
+      const normalizedSymbol = this.normalizeSymbol(symbol);
+      const orders = await this.exchange.fetchOpenOrders(normalizedSymbol);
+      
+      logger.debug('Open orders fetched', { symbol, count: orders.length });
+      return orders;
+    } catch (error) {
+      logger.error('Failed to fetch open orders', { error: serializeError(error), symbol });
       throw error;
     }
   }
