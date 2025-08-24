@@ -4,6 +4,7 @@ import { FileStorage } from './services/fileStorage';
 import { ExchangeService } from './services/exchangeService';
 import { TelegramService } from './services/telegramService';
 import { OrderExecutionService } from './services/orderExecutionService';
+import { PositionService } from './services/positionService';
 import { SlackService } from './services/slackService';
 import { Signal } from './types';
 
@@ -11,8 +12,9 @@ export class TelegramSignalsExecutor {
   private fileStorage: FileStorage;
   private exchangeService: ExchangeService;
   private telegramService: TelegramService;
-  private orderExecutionService: OrderExecutionService;
   private slackService: SlackService;
+  private positionService: PositionService;
+  private orderExecutionService: OrderExecutionService;
   private isRunning = false;
   private orderMonitoringInterval: NodeJS.Timeout | undefined;
 
@@ -22,10 +24,12 @@ export class TelegramSignalsExecutor {
     this.exchangeService = new ExchangeService();
     this.telegramService = new TelegramService();
     this.slackService = new SlackService();
+    this.positionService = new PositionService(this.fileStorage);
     this.orderExecutionService = new OrderExecutionService(
       this.exchangeService,
       this.fileStorage,
-      this.slackService
+      this.slackService,
+      this.positionService
     );
 
     logger.info('Telegram Signals Executor initialized');

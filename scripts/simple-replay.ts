@@ -6,13 +6,17 @@ import { SignalParser } from '../src/parsers/signalParser';
 import { Signal } from '../src/types';
 import { logger } from '../src/utils/logger';
 import { TelegramSignalsExecutor } from '../src/app';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface ReplayConfig {
-  botUsername: string;
+  botUsername?: string;
   startDate: Date;
   endDate?: Date | undefined;
   intervalMs: number;
   maxSignals: number;
+  source: 'telegram' | 'json';
+  jsonFilePath?: string;
 }
 
 class SimpleReplayWorkflow {
@@ -36,8 +40,9 @@ class SimpleReplayWorkflow {
    */
   async initialize(): Promise<void> {
     try {
-      await this.telegramService.initialize();
-      await this.app.start();
+      if (this.app) {
+        await this.app.start();
+      }
       logger.info('Replay workflow initialized with full app integration');
     } catch (error) {
       logger.error('Failed to initialize replay workflow', { error });
@@ -48,9 +53,15 @@ class SimpleReplayWorkflow {
   /**
    * Retrieve historical messages from Telegram bot
    */
-  async retrieveMessages(config: ReplayConfig): Promise<void> {
+  async retrieveMessagesFromTelegram(config: ReplayConfig): Promise<void> {
+    if (!config.botUsername) {
+      throw new Error('Bot username is required when using Telegram source');
+    }
+
     try {
-      logger.info('Retrieving historical messages', {
+      await this.telegramService.initialize();
+      
+      logger.info('Retrieving historical messages from Telegram', {
         botUsername: config.botUsername,
         startDate: config.startDate.toISOString(),
         endDate: config.endDate?.toISOString()
@@ -122,7 +133,7 @@ class SimpleReplayWorkflow {
 
       this.messages = allMessages;
 
-      logger.info('Historical messages retrieved', {
+      logger.info('Historical messages retrieved from Telegram', {
         totalMessages: this.messages.length,
         dateRange: {
           first: this.messages[0]?.date.toISOString(),
@@ -130,8 +141,85 @@ class SimpleReplayWorkflow {
         }
       });
     } catch (error) {
-      logger.error('Failed to retrieve historical messages', { error });
+      logger.error('Failed to retrieve historical messages from Telegram', { error });
       throw error;
+    }
+  }
+
+  /**
+   * Retrieve historical messages from JSON file
+   */
+  async retrieveMessagesFromJson(config: ReplayConfig): Promise<void> {
+    if (!config.jsonFilePath) {
+      throw new Error('JSON file path is required when using JSON source');
+    }
+
+    try {
+      logger.info('Retrieving historical messages from JSON file', {
+        filePath: config.jsonFilePath,
+        startDate: config.startDate.toISOString(),
+        endDate: config.endDate?.toISOString()
+      });
+
+      // Read and parse JSON file
+      const filePath = path.resolve(config.jsonFilePath);
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`JSON file not found: ${filePath}`);
+      }
+
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const jsonData = JSON.parse(fileContent);
+
+      if (!Array.isArray(jsonData)) {
+        throw new Error('JSON file must contain an array of messages');
+      }
+
+      // Convert JSON data to our message format and filter by date
+      const filteredMessages = jsonData
+        .filter((item: any) => {
+          if (!item.text || !item.date) return false;
+          
+          const messageDate = new Date(item.date);
+          const isAfterStart = messageDate >= config.startDate;
+          const isBeforeEnd = !config.endDate || messageDate <= config.endDate;
+          
+          return isAfterStart && isBeforeEnd;
+        })
+        .map((item: any) => ({
+          id: item.id || Math.floor(Math.random() * 1000000), // Generate ID if not present
+          text: item.text,
+          date: new Date(item.date),
+          chatId: item.chatId || REDACTED // Default chat ID if not present
+        }));
+
+      // Sort messages chronologically (oldest first)
+      filteredMessages.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+      this.messages = filteredMessages;
+
+      logger.info('Historical messages retrieved from JSON file', {
+        totalMessages: this.messages.length,
+        dateRange: {
+          first: this.messages[0]?.date.toISOString(),
+          last: this.messages[this.messages.length - 1]?.date.toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to retrieve historical messages from JSON file', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieve messages based on source type
+   */
+  async retrieveMessages(config: ReplayConfig): Promise<void> {
+    if (config.source === 'telegram') {
+      await this.retrieveMessagesFromTelegram(config);
+    } else if (config.source === 'json') {
+      await this.retrieveMessagesFromJson(config);
+    } else {
+      throw new Error(`Invalid source: ${config.source}. Must be 'telegram' or 'json'`);
     }
   }
 
@@ -250,8 +338,12 @@ class SimpleReplayWorkflow {
    */
   async cleanup(): Promise<void> {
     try {
-      await this.app.stop();
-      await this.telegramService.disconnect();
+      if (this.app) {
+        await this.app.stop();
+      }
+      if (this.telegramService) {
+        await this.telegramService.disconnect();
+      }
       logger.info('Replay workflow cleaned up');
     } catch (error) {
       logger.error('Error during cleanup', { error });
@@ -271,13 +363,26 @@ program
 program
   .command('start')
   .description('Start the complete replay workflow')
-  .requiredOption('-b, --bot <username>', 'Bot username (e.g., your_signal_bot)')
+  .option('-b, --bot <username>', 'Bot username (e.g., your_signal_bot) - required when source is telegram')
   .requiredOption('-s, --start-date <date>', 'Start date (YYYY-MM-DD)')
   .option('-e, --end-date <date>', 'End date (YYYY-MM-DD)')
   .option('--interval <ms>', 'Interval between messages in milliseconds', '5000')
   .option('--max-signals <number>', 'Maximum number of signals to process')
+  .option('--source <type>', 'Source of historical messages (telegram or json)', 'telegram')
+  .option('--json-file <path>', 'Path to a JSON file containing historical messages - required when source is json')
   .action(async (options) => {
     try {
+      // Validate options based on source
+      if (options.source === 'telegram' && !options.bot) {
+        console.error('❌ Error: Bot username (-b, --bot) is required when source is telegram');
+        process.exit(1);
+      }
+      
+      if (options.source === 'json' && !options.jsonFile) {
+        console.error('❌ Error: JSON file path (--json-file) is required when source is json');
+        process.exit(1);
+      }
+
       await replayWorkflow.initialize();
       
       const config: ReplayConfig = {
@@ -285,10 +390,12 @@ program
         startDate: new Date(options.startDate),
         endDate: options.endDate ? new Date(options.endDate) : undefined,
         intervalMs: parseInt(options.interval),
-        maxSignals: options.maxSignals ? parseInt(options.maxSignals) : 0
+        maxSignals: options.maxSignals ? parseInt(options.maxSignals) : 0,
+        source: options.source as 'telegram' | 'json',
+        jsonFilePath: options.jsonFile
       };
       
-      console.log('📥 Step 1: Retrieving historical messages...');
+      console.log(`📥 Step 1: Retrieving historical messages from ${options.source}...`);
       await replayWorkflow.retrieveMessages(config);
       
       console.log('🚀 Step 2: Starting replay with full end-to-end execution...');

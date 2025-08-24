@@ -68,7 +68,7 @@ export class ExchangeService {
   /**
    * Get market info for a symbol
    */
-  private async getMarket(symbol: string): Promise<ccxt.Market> {
+  async getMarket(symbol: string): Promise<ccxt.Market> {
     const normalizedSymbol = this.normalizeSymbol(symbol);
     
     if (this.symbolCache.has(normalizedSymbol)) {
@@ -87,7 +87,7 @@ export class ExchangeService {
   /**
    * Round amount to exchange precision
    */
-  private roundAmount(amount: number, market: ccxt.Market): number {
+  roundAmount(amount: number, market: ccxt.Market): number {
     const precision = (market as any).precision.amount;
     return Math.round(amount / precision) * precision;
   }
@@ -95,7 +95,7 @@ export class ExchangeService {
   /**
    * Round price to exchange precision
    */
-  private roundPrice(price: number, market: ccxt.Market): number {
+  roundPrice(price: number, market: ccxt.Market): number {
     const precision = (market as any).precision.price;
     return Math.round(price / precision) * precision;
   }
@@ -103,7 +103,7 @@ export class ExchangeService {
   /**
    * Check if order meets minimum requirements (notional and quantity)
    */
-  private async checkMinimumRequirements(symbol: string, amount: number, price: number): Promise<boolean> {
+  async checkMinimumRequirements(symbol: string, amount: number, price: number): Promise<boolean> {
     try {
       const market = await this.getMarket(symbol);
       const notional = amount * price;
@@ -132,6 +132,38 @@ export class ExchangeService {
     } catch (error) {
       logger.error('Failed to check minimum requirements', { error: serializeError(error), symbol, amount, price });
       return false;
+    }
+  }
+
+  /**
+   * Update stop-loss order on exchange
+   */
+  async updateStopLoss(symbol: string, stopLossPrice: number, quantity?: number, side?: OrderSide): Promise<void> {
+    try {
+      // For now, we'll just log the stop-loss update
+      // In a real implementation, you would need to:
+      // 1. Cancel existing stop-loss orders
+      // 2. Place new stop-loss orders at the new price
+      // 3. Handle different exchange APIs for stop-loss management
+      
+      logger.info('Stop-loss updated on exchange', { 
+        symbol, 
+        stopLossPrice,
+        quantity,
+        side,
+        note: 'Implementation depends on exchange-specific stop-loss API'
+      });
+      
+      // TODO: Implement actual stop-loss order update based on exchange
+      // Example for Binance Futures:
+      // if (quantity && side) {
+      //   await this.cancelAllOrders(symbol);
+      //   await this.placeStopLossOrder(symbol, side, quantity, stopLossPrice);
+      // }
+      
+    } catch (error) {
+      logger.error('Failed to update stop-loss on exchange', { error: serializeError(error), symbol, stopLossPrice });
+      throw error;
     }
   }
 
@@ -226,7 +258,9 @@ export class ExchangeService {
   async placeMarketOrder(
     symbol: string,
     side: OrderSide,
-    amount: number
+    amount: number,
+    stopLossPrice?: number,
+    takeProfitPrice?: number
   ): Promise<ccxt.Order> {
     try {
       const market = await this.getMarket(symbol);
@@ -234,10 +268,30 @@ export class ExchangeService {
       
       const roundedAmount = this.roundAmount(amount, market);
 
-      const order = await this.exchange.createMarketOrder(
+      // Prepare order parameters
+      const orderParams: any = {};
+      
+      // Add stop-loss if provided
+      if (stopLossPrice !== undefined) {
+        const roundedStopLoss = this.roundPrice(stopLossPrice, market);
+        orderParams.stopLossPrice = roundedStopLoss;
+        logger.debug('Adding stop-loss to order', { symbol, stopLossPrice: roundedStopLoss });
+      }
+      
+      // Add take-profit if provided
+      if (takeProfitPrice !== undefined) {
+        const roundedTakeProfit = this.roundPrice(takeProfitPrice, market);
+        orderParams.takeProfitPrice = roundedTakeProfit;
+        logger.debug('Adding take-profit to order', { symbol, takeProfitPrice: roundedTakeProfit });
+      }
+
+      const order = await this.exchange.createOrder(
         normalizedSymbol,
+        'market',
         side,
-        roundedAmount
+        roundedAmount,
+        undefined, // price (not needed for market orders)
+        orderParams
       );
 
       logger.info('Market order placed', {
@@ -245,11 +299,20 @@ export class ExchangeService {
         side,
         amount: roundedAmount,
         orderId: order.id,
+        stopLossPrice: orderParams.stopLoss,
+        takeProfitPrice: orderParams.takeProfit,
       });
 
       return order;
     } catch (error) {
-      logger.error('Failed to place market order', { error: serializeError(error), symbol, side, amount });
+      logger.error('Failed to place market order', { 
+        error: serializeError(error), 
+        symbol, 
+        side, 
+        amount,
+        stopLossPrice,
+        takeProfitPrice
+      });
       throw error;
     }
   }

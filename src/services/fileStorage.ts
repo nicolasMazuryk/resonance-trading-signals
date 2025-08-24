@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { Signal, Order, Analytics } from '../types';
+import { Signal, Order, Analytics, Position, PartialClose, PositionUpdate } from '../types';
 import { logger, serializeError } from '../utils/logger';
 
 export class FileStorage {
@@ -8,12 +8,18 @@ export class FileStorage {
   private signalsFile: string;
   private ordersFile: string;
   private analyticsFile: string;
+  private positionsFile: string;
+  private partialClosesFile: string;
+  private positionUpdatesFile: string;
 
   constructor() {
     this.dataDir = join(process.cwd(), 'data');
     this.signalsFile = join(this.dataDir, 'signals.json');
     this.ordersFile = join(this.dataDir, 'orders.json');
     this.analyticsFile = join(this.dataDir, 'analytics.json');
+    this.positionsFile = join(this.dataDir, 'positions.json');
+    this.partialClosesFile = join(this.dataDir, 'partial-closes.json');
+    this.positionUpdatesFile = join(this.dataDir, 'position-updates.json');
 
     this.ensureDataDir();
     this.initializeFiles();
@@ -31,6 +37,9 @@ export class FileStorage {
       { path: this.signalsFile, default: [] },
       { path: this.ordersFile, default: [] },
       { path: this.analyticsFile, default: [] },
+      { path: this.positionsFile, default: [] },
+      { path: this.partialClosesFile, default: [] },
+      { path: this.positionUpdatesFile, default: [] },
     ];
 
     files.forEach(({ path, default: defaultValue }) => {
@@ -149,9 +158,88 @@ export class FileStorage {
     return analytics.filter(a => Math.abs(a.priceDeviationPercent) > threshold);
   }
 
+  // Position operations
+  savePosition(position: Position): void {
+    const positions = this.readFile<Position>(this.positionsFile);
+    positions.push(position);
+    this.writeFile(this.positionsFile, positions);
+    logger.info('Position saved', { positionId: position.id, symbol: position.symbol });
+  }
+
+  getPositions(): Position[] {
+    return this.readFile<Position>(this.positionsFile);
+  }
+
+  getOpenPosition(symbol: string): Position | undefined {
+    const positions = this.readFile<Position>(this.positionsFile);
+    return positions.find(p => p.symbol === symbol && p.status === 'open');
+  }
+
+  updatePosition(positionId: string, updates: Partial<Position>): void {
+    const positions = this.readFile<Position>(this.positionsFile);
+    const index = positions.findIndex(p => p.id === positionId);
+    if (index !== -1) {
+      positions[index] = { ...positions[index], ...updates } as Position;
+      this.writeFile(this.positionsFile, positions);
+      logger.info('Position updated', { positionId, updates });
+    }
+  }
+
+  getPositionsByStatus(status: Position['status']): Position[] {
+    const positions = this.readFile<Position>(this.positionsFile);
+    return positions.filter(p => p.status === status);
+  }
+
+  // Partial close operations
+  savePartialClose(partialClose: PartialClose): void {
+    const partialCloses = this.readFile<PartialClose>(this.partialClosesFile);
+    partialCloses.push(partialClose);
+    this.writeFile(this.partialClosesFile, partialCloses);
+    logger.info('Partial close saved', { partialCloseId: partialClose.id });
+  }
+
+  updatePartialClose(partialCloseId: string, updates: Partial<PartialClose>): void {
+    const partialCloses = this.readFile<PartialClose>(this.partialClosesFile);
+    const index = partialCloses.findIndex(pc => pc.id === partialCloseId);
+    if (index !== -1) {
+      partialCloses[index] = { ...partialCloses[index], ...updates } as PartialClose;
+      this.writeFile(this.partialClosesFile, partialCloses);
+      logger.info('Partial close updated', { partialCloseId, updates });
+    }
+  }
+
+  getPartialCloses(): PartialClose[] {
+    return this.readFile<PartialClose>(this.partialClosesFile);
+  }
+
+  getPartialClosesByPosition(positionId: string): PartialClose[] {
+    const partialCloses = this.readFile<PartialClose>(this.partialClosesFile);
+    return partialCloses.filter(pc => pc.positionId === positionId);
+  }
+
+  // Position update operations
+  savePositionUpdate(update: PositionUpdate): void {
+    const updates = this.readFile<PositionUpdate>(this.positionUpdatesFile);
+    updates.push(update);
+    this.writeFile(this.positionUpdatesFile, updates);
+    logger.info('Position update saved', { updateId: update.id });
+  }
+
+  getPositionUpdates(): PositionUpdate[] {
+    return this.readFile<PositionUpdate>(this.positionUpdatesFile);
+  }
+
+  getPositionUpdatesByPosition(positionId: string): PositionUpdate[] {
+    const updates = this.readFile<PositionUpdate>(this.positionUpdatesFile);
+    return updates.filter(u => u.positionId === positionId);
+  }
+
   getSummaryStats(): {
     totalSignals: number;
     totalOrders: number;
+    totalPositions: number;
+    openPositions: number;
+    closedPositions: number;
     avgDeviation: number;
     avgDelay: number;
     successRate: number;
@@ -159,9 +247,13 @@ export class FileStorage {
     const signals = this.readFile<Signal>(this.signalsFile);
     const orders = this.readFile<Order>(this.ordersFile);
     const analytics = this.readFile<Analytics>(this.analyticsFile);
+    const positions = this.readFile<Position>(this.positionsFile);
 
     const totalSignals = signals.length;
     const totalOrders = orders.length;
+    const totalPositions = positions.length;
+    const openPositions = positions.filter(p => p.status === 'open').length;
+    const closedPositions = positions.filter(p => p.status === 'closed').length;
     
     let avgDeviation = 0;
     let avgDelay = 0;
@@ -178,6 +270,9 @@ export class FileStorage {
     return {
       totalSignals,
       totalOrders,
+      totalPositions,
+      openPositions,
+      closedPositions,
       avgDeviation,
       avgDelay,
       successRate,

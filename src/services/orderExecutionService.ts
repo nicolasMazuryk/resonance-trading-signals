@@ -1,15 +1,17 @@
-import { Signal, OpenSignal, Order, OrderSide, OrderType, Analytics } from '../types';
+import { Signal, OpenSignal, Order, OrderSide, Analytics, PartialSignal, UpdateSignal, CloseSignal } from '../types';
 import { config } from '../config';
 import { logger, serializeError } from '../utils/logger';
 import { ExchangeService } from './exchangeService';
 import { FileStorage } from './fileStorage';
 import { SlackService } from './slackService';
+import { PositionService } from './positionService';
 
 export class OrderExecutionService {
   constructor(
     private exchangeService: ExchangeService,
     private fileStorage: FileStorage,
-    private slackService: SlackService
+    private slackService: SlackService,
+    private positionService: PositionService
   ) {}
 
   /**
@@ -43,8 +45,6 @@ export class OrderExecutionService {
 
       // Save signal to file storage
       this.fileStorage.saveSignal(signal);
-
-      return
 
       // Execute orders based on signal type
       switch (signal.type) {
@@ -81,81 +81,13 @@ export class OrderExecutionService {
    */
   private async executeOpenSignal(signal: OpenSignal): Promise<void> {
     try {
-      // Set leverage if supported
-      await this.exchangeService.setLeverage(signal.symbol, config.exchange.defaultLeverage);
+      // Create position first
+      const position = this.positionService.createPosition(signal);
 
-      // Calculate order amount based on position size
-      const orderAmount = signal.sizeUsdt / signal.price / 100;
-
-      // Determine order side
-      const orderSide: OrderSide = signal.action === 'LONG' ? 'buy' : 'sell';
-
-      // Try limit order first, fallback to market if needed
-      let order: any;
-      let orderType: OrderType = 'limit';
-
-      try {
-        order = await this.exchangeService.placeLimitOrder(
-          signal.symbol,
-          orderSide,
-          orderAmount,
-          signal.price
-        );
-      } catch (error) {
-        logger.warn('Limit order failed, trying market order', { error, signal });
-        
-        // const ticker = await this.exchangeService.getTicker(signal.symbol);
-        // if (!ticker.last) {
-        //   throw new Error(`No price data available for ${signal.symbol}`);
-        // }
-
-        // // Check if price deviation is within tolerance
-        // const priceDeviation = Math.abs(ticker.last! - signal.price) / signal.price;
-        // if (priceDeviation > config.exchange.orderSlippageTolerance) {
-        //   throw new Error(`Price deviation ${(priceDeviation * 100).toFixed(2)}% exceeds tolerance ${(config.exchange.orderSlippageTolerance * 100).toFixed(2)}%`);
-        // }
-
-        order = await this.exchangeService.placeMarketOrder(
-          signal.symbol,
-          orderSide,
-          orderAmount
-        );
-        orderType = 'market';
-      }
-
-      // Create order object
-      const orderObj: Order = {
-        id: order.id,
-        signalId: signal.messageHash,
-        symbol: signal.symbol,
-        side: orderSide,
-        type: orderType,
-        amount: order.amount,
-        price: signal.price,
-        status: order.status === 'closed' ? 'filled' : 'pending',
-        exchangeOrderId: order.id,
-        filledAmount: order.filled,
-        filledPrice: order.average,
-        fee: order.fee,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      // Store order in file storage
-      this.fileStorage.saveOrder(orderObj);
-
-      // If order is filled immediately, calculate analytics
-      if (order.status === 'closed' && order.filled) {
-        await this.calculateAnalytics(signal, orderObj, signal.price, order.average);
-      }
-
-      logger.info('Open signal executed', {
-        orderId: order.id,
-        symbol: signal.symbol,
-        action: signal.action,
-        orderType,
-        status: order.status,
-      });
+      // Execute order on exchange
+      await this.executeOrder(signal, position);
+      
+      logger.info('Open signal executed', { positionId: position.id, symbol: signal.symbol });
     } catch (error) {
       logger.error('Failed to execute open signal', { error: serializeError(error), signal });
       throw error;
@@ -163,35 +95,206 @@ export class OrderExecutionService {
   }
 
   /**
-   * Execute close signal (place exit order)
-   */
-  private async executeCloseSignal(signal: Signal): Promise<void> {
-    // For close signals, we would typically close existing positions
-    // This is a simplified implementation - in practice, you'd need to track positions
-    logger.info('Close signal received', { symbol: signal.symbol, type: signal.type });
-    
-    // TODO: Implement position tracking and closing logic
-    // For now, just log the signal
-  }
-
-  /**
    * Execute partial signal (partial position close)
    */
-  private async executePartialSignal(signal: Signal): Promise<void> {
-    // Similar to close signal - would need position tracking
-    logger.info('Partial signal received', { symbol: signal.symbol, type: signal.type });
-    
-    // TODO: Implement partial position closing logic
+  private async executePartialSignal(signal: PartialSignal): Promise<void> {
+    try {
+      // Update position tracking
+      const position = this.positionService.handlePartialClose(signal);
+
+      // Execute partial close order on exchange
+      const orderSide = position.side === 'LONG' ? 'sell' : 'buy';
+      const latestPartialClose = position.partialCloses[position.partialCloses.length - 1];
+      
+      if (!latestPartialClose) {
+        throw new Error('No partial close found after processing signal');
+      }
+
+      // Round the close quantity and check minimum requirements
+      const market = await this.exchangeService.getMarket(signal.symbol);
+      const roundedCloseQuantity = this.exchangeService.roundAmount(latestPartialClose.closeQuantity, market);
+      
+      // Check minimum requirements for the close order
+      const meetsMinimum = await this.exchangeService.checkMinimumRequirements(
+        signal.symbol, 
+        roundedCloseQuantity, 
+        signal.partialPrice
+      );
+      
+      if (!meetsMinimum) {
+        throw new Error(`Partial close order below minimum notional or quantity for ${signal.symbol}`);
+      }
+
+      const order = await this.exchangeService.placeMarketOrder(
+        signal.symbol,
+        orderSide,
+        roundedCloseQuantity
+      );
+
+      // Update partial close with actual executed quantity and fees
+      latestPartialClose.closeQuantity = roundedCloseQuantity;
+      latestPartialClose.closeSizeUsdt = roundedCloseQuantity * signal.partialPrice;
+      latestPartialClose.fee = order.fee?.cost || 0;
+      latestPartialClose.exchangeOrderId = order.id;
+      
+      // Update position with actual remaining quantities
+      position.remainingQuantity = position.quantity - position.partialCloses.reduce((sum, pc) => sum + pc.closeQuantity, 0);
+      position.remainingSizeUsdt = position.sizeUsdt - position.partialCloses.reduce((sum, pc) => sum + pc.closeSizeUsdt, 0);
+      
+      this.fileStorage.updatePartialClose(latestPartialClose.id, latestPartialClose);
+      this.fileStorage.updatePosition(position.id, position);
+
+      logger.info('Partial close executed', { 
+        positionId: position.id, 
+        closeQuantity: roundedCloseQuantity, 
+        closePrice: signal.partialPrice,
+        fee: latestPartialClose.fee
+      });
+    } catch (error) {
+      logger.error('Failed to execute partial signal', { error: serializeError(error), signal });
+      throw error;
+    }
   }
 
   /**
    * Execute update signal (modify stop loss)
    */
-  private async executeUpdateSignal(signal: Signal): Promise<void> {
-    // Update signals typically modify existing orders (like stop losses)
-    logger.info('Update signal received', { symbol: signal.symbol, type: signal.type });
+  private async executeUpdateSignal(signal: UpdateSignal): Promise<void> {
+    try {
+      // Update position tracking
+      const position = this.positionService.handleStopLossUpdate(signal);
+
+      // Implement stop-loss order update on exchange
+      const orderSide = position.side === 'LONG' ? 'sell' : 'buy';
+      await this.exchangeService.updateStopLoss(
+        signal.symbol,
+        position.stopLossPrice,
+        position.remainingQuantity,
+        orderSide
+      );
+
+      logger.info('Stop-loss updated to breakeven', { 
+        positionId: position.id, 
+        newStopLoss: position.stopLossPrice,
+        remainingQuantity: position.remainingQuantity,
+        side: orderSide
+      });
+    } catch (error) {
+      logger.error('Failed to execute update signal', { error: serializeError(error), signal });
+      throw error;
+    }
+  }
+
+  /**
+   * Execute close signal (place exit order)
+   */
+  private async executeCloseSignal(signal: CloseSignal): Promise<void> {
+    try {
+      // Get position before closing it to preserve remaining quantity
+      const position = this.positionService.getPosition(signal.symbol);
+      if (!position) {
+        throw new Error(`No open position found for ${signal.symbol}`);
+      }
+
+      // Round the close quantity and check minimum requirements
+      const market = await this.exchangeService.getMarket(signal.symbol);
+      const roundedCloseQuantity = this.exchangeService.roundAmount(position.remainingQuantity, market);
+      
+      // Check minimum requirements for the close order
+      const meetsMinimum = await this.exchangeService.checkMinimumRequirements(
+        signal.symbol, 
+        roundedCloseQuantity, 
+        signal.closePrice
+      );
+      
+      if (!meetsMinimum) {
+        throw new Error(`Close order below minimum notional or quantity for ${signal.symbol}`);
+      }
+
+      // Execute close order on exchange
+      const orderSide = position.side === 'LONG' ? 'sell' : 'buy';
+      
+      const order = await this.exchangeService.placeMarketOrder(
+        signal.symbol,
+        orderSide,
+        roundedCloseQuantity
+      );
+
+      // Update position tracking with actual executed quantity and fees
+      const closeData = {
+        closeQuantity: roundedCloseQuantity,
+        closeSizeUsdt: roundedCloseQuantity * signal.closePrice,
+        fee: order.fee?.cost || 0,
+        exchangeOrderId: order.id
+      };
+
+      const updatedPosition = this.positionService.handlePositionClose(signal, closeData);
+
+      logger.info('Position closed', { 
+        positionId: updatedPosition.id, 
+        closeReason: signal.reason,
+        finalPnL: updatedPosition.realizedPnL,
+        fee: closeData.fee
+      });
+    } catch (error) {
+      logger.error('Failed to execute close signal', { error: serializeError(error), signal });
+      throw error;
+    }
+  }
+
+  /**
+   * Execute order on exchange
+   */
+  private async executeOrder(signal: OpenSignal, position: any): Promise<void> {
+    // Set leverage if supported
+    await this.exchangeService.setLeverage(signal.symbol, config.exchange.defaultLeverage);
+
+    // Calculate order amount
+    const orderAmount = signal.sizeUsdt / signal.price / 100;
+    const orderSide: OrderSide = signal.action === 'LONG' ? 'buy' : 'sell';
+
+    // Round the order amount and check minimum requirements
+    const market = await this.exchangeService.getMarket(signal.symbol);
+    const roundedOrderAmount = this.exchangeService.roundAmount(orderAmount, market);
     
-    // TODO: Implement order modification logic
+    // Check minimum requirements
+    const meetsMinimum = await this.exchangeService.checkMinimumRequirements(
+      signal.symbol, 
+      roundedOrderAmount, 
+      signal.price
+    );
+    
+    if (!meetsMinimum) {
+      throw new Error(`Order below minimum notional or quantity for ${signal.symbol}`);
+    }
+
+    // Place market order with stop-loss and take-profit
+    const order = await this.exchangeService.placeMarketOrder(
+      signal.symbol,
+      orderSide,
+      roundedOrderAmount,
+      signal.slPrice,  // Stop-loss price
+      signal.tpPrice   // Take-profit price
+    );
+
+    // Update position with actual executed quantity and fees
+    position.quantity = roundedOrderAmount;
+    position.sizeUsdt = roundedOrderAmount * signal.price;
+    position.remainingQuantity = roundedOrderAmount;
+    position.remainingSizeUsdt = position.sizeUsdt;
+    position.fee = order.fee?.cost || 0;
+    position.exchangeOrderId = order.id;
+    
+    this.fileStorage.updatePosition(position.id, position);
+
+    logger.info('Market order executed with stop-loss and take-profit', {
+      symbol: signal.symbol,
+      side: orderSide,
+      amount: roundedOrderAmount,
+      fee: position.fee,
+      stopLossPrice: signal.slPrice,
+      takeProfitPrice: signal.tpPrice
+    });
   }
 
   /**
@@ -228,6 +331,7 @@ export class OrderExecutionService {
         priceDeviationPercent,
         executionDelayMs,
         slippageUsdt,
+        tradingFee: order.fee || 0,
         createdAt: executionTime,
       };
 
@@ -250,6 +354,7 @@ export class OrderExecutionService {
         priceDeviationPercent,
         executionDelayMs,
         slippageUsdt,
+        tradingFee: order.fee || 0,
       });
     } catch (error) {
       logger.error('Failed to calculate analytics', { error: serializeError(error), orderId: order.id });
@@ -311,5 +416,23 @@ export class OrderExecutionService {
     } catch (error) {
       logger.error('Failed to monitor pending orders', { error: serializeError(error) });
     }
+  }
+
+  /**
+   * Get current positions summary
+   */
+  getPositionsSummary(): {
+    openPositions: number;
+    totalPnL: number;
+    positions: any[];
+  } {
+    const openPositions = this.positionService.getOpenPositions();
+    const totalPnL = openPositions.reduce((sum, pos) => sum + (pos.unrealizedPnL || 0), 0);
+    
+    return {
+      openPositions: openPositions.length,
+      totalPnL,
+      positions: openPositions
+    };
   }
 }

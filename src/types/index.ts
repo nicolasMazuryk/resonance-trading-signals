@@ -76,6 +76,7 @@ export interface Analytics {
   priceDeviationPercent: number;
   executionDelayMs: number;
   slippageUsdt: number;
+  tradingFee: number;
   createdAt: Date;
 }
 
@@ -120,6 +121,8 @@ export interface Position {
   unrealizedPnL?: number;
   partialCloses: PartialClose[];
   breakevenPrice: number; // Calculated breakeven after partial closes
+  fee?: number;
+  exchangeOrderId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -133,6 +136,8 @@ export interface PartialClose {
   closePercent: number; // e.g., 30%
   realizedPnL: number;
   closeTime: Date;
+  fee?: number;
+  exchangeOrderId?: string;
 }
 
 export interface PositionUpdate {
