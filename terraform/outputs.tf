@@ -9,31 +9,29 @@ output "ecs_cluster_arn" {
 }
 
 # output "service_arns" {
-#   description = "Map of service names to their ARNs"
+#   description = "Map of service names to their IDs"
 #   value = {
-#     spot_stable         = aws_ecs_service.grid_bot_spot_stable.arn
-#     spot_infinity      = aws_ecs_service.grid_bot_spot_infinity.arn
-#     futures            = aws_ecs_service.grid_bot_futures.arn
-#     futures_infinity   = aws_ecs_service.grid_bot_futures_infinity.arn
+#     resonance_reverse_signal_bot = aws_ecs_service.services["resonance_reverse_signal_bot"].id
 #   }
 # }
 
 # output "task_definition_arns" {
 #   description = "Map of task definition ARNs"
 #   value = {
-#     spot_stable       = aws_ecs_task_definition.grid_bot_spot_stable.arn
-#     spot_infinity    = aws_ecs_task_definition.grid_bot_spot_infinity.arn
-#     futures          = aws_ecs_task_definition.grid_bot_futures.arn
-#     futures_infinity = aws_ecs_task_definition.grid_bot_futures_infinity.arn
+#     resonance_reverse_signal_bot = aws_ecs_task_definition.task_definitions["resonance_reverse_signal_bot"].arn
 #   }
 # }
 
 # output "log_groups" {
 #   description = "Map of CloudWatch log groups for each bot"
 #   value = {
-#     spot_stable       = aws_cloudwatch_log_group.grid_bot_spot_stable.name
-#     spot_infinity    = aws_cloudwatch_log_group.grid_bot_spot_infinity.name
-#     futures          = aws_cloudwatch_log_group.grid_bot_futures.name
-#     futures_infinity = aws_cloudwatch_log_group.grid_bot_futures_infinity.name
+#     resonance_reverse_signal_bot = aws_cloudwatch_log_group.log_groups["resonance_reverse_signal_bot"].name
+#   }
+# }
+
+# output "ecr_repository_urls" {
+#   description = "Map of ECR repository URLs"
+#   value = {
+#     resonance_reverse_signal_bot = aws_ecr_repository.repositories["resonance_reverse_signal_bot"].repository_url
 #   }
 # }

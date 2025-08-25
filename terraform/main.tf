@@ -20,24 +20,9 @@ locals {
 
   # Bot configurations
   bots = {
-    grid_bot_spot_stable = {
-      cpu      = 256
-      memory   = 512
-      bot_mode = "SPOT"
-    }
-    grid_bot_spot_infinity = {
-      cpu      = 256
-      memory   = 512
-      bot_mode = "SPOT"
-    }
-    grid_bot_futures = {
-      cpu      = 256
-      memory   = 512
-      bot_mode = "FUTURES"
-    }
-    grid_bot_futures_infinity = {
-      cpu      = 256
-      memory   = 512
+    resonance_reverse_signal_bot = {
+      cpu      = 512
+      memory   = 1024
       bot_mode = "FUTURES"
     }
   }

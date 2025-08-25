@@ -1,0 +1,52 @@
+FROM --platform=linux/arm64 node:22.12-slim
+
+WORKDIR /app
+
+# Install Python and build tools for native dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package files
+COPY package.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+
+# Copy configuration files
+COPY tsconfig.json ./
+COPY .env* ./
+
+# Build the application
+RUN npm run build
+
+# Expose port (if needed for health checks)
+EXPOSE 3000
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV LOG_LEVEL=INFO
+
+# Default environment variables (will be overridden by ECS task definition)
+ENV TELEGRAM_API_ID=${TELEGRAM_API_ID}
+ENV TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+ENV TELEGRAM_SESSION=${TELEGRAM_SESSION}
+ENV TELEGRAM_BOT_ID=
+ENV TELEGRAM_ALLOWED_USERNAMES=your_signal_bot
+ENV EXCHANGE_ID=binanceusdm
+ENV EXCHANGE_API_KEY=${EXCHANGE_API_KEY}
+ENV EXCHANGE_API_SECRET=${EXCHANGE_API_SECRET}
+ENV DEFAULT_LEVERAGE=2
+ENV ORDER_SLIPPAGE_TOLERANCE=0.2
+ENV MAX_SIGNAL_AGE_MS=120000
+ENV TAKER_FEE=0.0005
+ENV MAKER_FEE=0.0002
+
+# Start the application
+CMD ["node", "dist/index.js"]
