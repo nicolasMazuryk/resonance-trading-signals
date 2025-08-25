@@ -191,7 +191,7 @@ export class TelegramService {
       }
 
       // Only process NewMessage events
-      if (event.className !== 'NewMessage') {
+      if (event.className !== 'NewMessage' && event.constructor?.name !== 'NewMessageEvent') {
         // Only log non-message events occasionally to avoid spam
         if (Math.random() < 0.10) { // Log 10% of non-message events
           logger.debug('Skipping non-message event', { 

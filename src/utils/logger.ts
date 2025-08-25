@@ -2,6 +2,9 @@ import winston from 'winston';
 import { config } from '../config';
 import { isErrorBlacklisted } from '../config/errorBlacklist';
 
+const LOG_LEVEL = config.nodeEnv === 'production' ? 'info' : 'debug'
+// const LOG_LEVEL = 'debug'
+
 // Simple format that avoids Winston's automatic error serialization
 const logFormat = winston.format.combine(
   winston.format.timestamp(),
@@ -28,7 +31,7 @@ const logFormat = winston.format.combine(
 // Create a custom logger that checks blacklist before logging
 const createFilteredLogger = () => {
   const winstonLogger = winston.createLogger({
-    level: config.nodeEnv === 'production' ? 'info' : 'debug',
+    level: LOG_LEVEL,
     format: logFormat,
     transports: [
       new winston.transports.Console({
