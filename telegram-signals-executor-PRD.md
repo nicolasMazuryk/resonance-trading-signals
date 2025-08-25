@@ -1,7 +1,7 @@
 # PRD — Telegram Crypto Signals → Exchange Orders (TypeScript, Node.js)
 
 ## 1) Summary
-A **TypeScript** service that listens to Telegram messages, parses trading signals, and executes orders on a crypto exchange via **ccxt**. Persist all signals and executions in **SQLite**, compare signals vs. real fills for analytics, and alert **Slack** on errors/deviations.
+A **TypeScript** service that listens to Telegram messages, parses trading signals, and executes orders on a crypto exchange via **ccxt**. Persist all signals and executions in **SQLite**, compare signals vs. real fills for analytics, and log errors/deviations.
 
 ---
 
@@ -28,7 +28,6 @@ DEFAULT_LEVERAGE=10
 ORDER_SLIPPAGE_TOLERANCE=0.2
 MAX_SIGNAL_AGE_MS=90000
 
-SLACK_WEBHOOK_URL=
 NODE_ENV=production
 ```
 
@@ -136,12 +135,12 @@ Use `better-sqlite3` with migrations.
 
 ---
 
-## 8) Alerts (Slack only)
-- Slack webhook on:
+## 8) Error Logging
+- Log errors for:
   - Parsing failure for a supported type / missing critical fields
   - Order placement/fill failure
   - Deviation `|price_deviation_percent| > 2` or stale signal (`> MAX_SIGNAL_AGE_MS`)
-- Payload includes symbol, type, parsed fields, and error context.
+- Logs include symbol, type, parsed fields, and error context.
 
 ---
 
@@ -159,7 +158,7 @@ Use `better-sqlite3` with migrations.
 - Persists full signal history and all exchange orders in SQLite.
 - Executes orders idempotently via ccxt and records results.
 - Computes analytics (deviation, delay, slippage) and stores in `analytics` table.
-- Sends Slack alerts on failures and deviations.
+- Logs errors on failures and deviations.
 - Includes unit tests for regex parsing and precision rounding helpers.
 
 ---

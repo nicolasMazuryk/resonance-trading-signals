@@ -26,9 +26,6 @@ export interface Config {
     };
   };
   maxSignalAgeMs: number;
-  slack: {
-    webhookUrl?: string;
-  };
   nodeEnv: 'development' | 'production' | 'test';
 }
 
@@ -59,9 +56,6 @@ const getConfig = (): Config => {
         },
       },
       maxSignalAgeMs: parseInt(process.env['MAX_SIGNAL_AGE_MS'] || '90000'),
-      slack: {
-        ...(process.env['SLACK_WEBHOOK_URL'] && { webhookUrl: process.env['SLACK_WEBHOOK_URL'] }),
-      },
       nodeEnv: (process.env['NODE_ENV'] as Config['nodeEnv']) || 'production',
     };
   }
@@ -88,9 +82,6 @@ const getConfig = (): Config => {
       },
     },
     maxSignalAgeMs: parseInt(process.env['MAX_SIGNAL_AGE_MS'] || '90000'),
-          slack: {
-        ...(process.env['SLACK_WEBHOOK_URL'] && { webhookUrl: process.env['SLACK_WEBHOOK_URL'] }),
-      },
     nodeEnv: (process.env['NODE_ENV'] as Config['nodeEnv']) || 'production',
   };
 };

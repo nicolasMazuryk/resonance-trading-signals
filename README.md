@@ -1,6 +1,6 @@
 # Telegram Crypto Signals Executor
 
-A TypeScript service that listens to Telegram messages, parses trading signals, and executes orders on crypto exchanges via ccxt. Features comprehensive analytics and Slack alerts.
+A TypeScript service that listens to Telegram messages, parses trading signals, and executes orders on crypto exchanges via ccxt. Features comprehensive analytics and error logging.
 
 ## Features
 
@@ -9,7 +9,7 @@ A TypeScript service that listens to Telegram messages, parses trading signals, 
 - **Signal Types**: Supports opening, closing, partial close, and update signals
 - **Idempotency**: Prevents duplicate order execution using message hashing
 - **Analytics**: Tracks price deviations, execution delays, and slippage
-- **Error Alerts**: Slack notifications for errors and high deviations only
+- **Error Logging**: Comprehensive error logging and monitoring
 - **File Storage**: Simple JSON file storage for signals, orders, and analytics
 - **CLI Tools**: Command-line interface for data access
 - **Historical Replay**: Retrieve and replay historical messages for end-to-end testing
@@ -72,7 +72,7 @@ Update time: 2024-01-15 14:35:00 GMT+0
 - npm or yarn
 - Telegram API credentials
 - Crypto exchange API credentials
-- Slack webhook URL (optional)
+
 
 ## Installation
 
@@ -107,7 +107,6 @@ DEFAULT_LEVERAGE=10
 ORDER_SLIPPAGE_TOLERANCE=0.2
 MAX_SIGNAL_AGE_MS=90000
 
-SLACK_WEBHOOK_URL=your_slack_webhook_url
 NODE_ENV=production
 ```
 
@@ -183,7 +182,7 @@ npm run format
 | `DEFAULT_LEVERAGE` | Default leverage for futures | `10` |
 | `ORDER_SLIPPAGE_TOLERANCE` | Max price deviation for market orders | `0.2` |
 | `MAX_SIGNAL_AGE_MS` | Max signal age in milliseconds | `90000` |
-| `SLACK_WEBHOOK_URL` | Slack webhook URL | Optional |
+
 | `NODE_ENV` | Environment | `production` |
 
 ### Order Execution Logic
@@ -278,7 +277,7 @@ npm run replay -- -b your_signal_bot -s 2024-08-14
 
 For detailed documentation, see [REPLAY_README.md](REPLAY_README.md).
 
-## Error Alerts (Slack)
+## Error Logging
 - Signal parsing failures
 - Order execution failures
 - High price deviations (>2%)

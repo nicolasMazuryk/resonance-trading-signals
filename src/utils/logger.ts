@@ -1,5 +1,6 @@
 import winston from 'winston';
 import { config } from '../config';
+import { isErrorBlacklisted } from '../config/errorBlacklist';
 
 // Simple format that avoids Winston's automatic error serialization
 const logFormat = winston.format.combine(
@@ -24,22 +25,47 @@ const logFormat = winston.format.combine(
   })
 );
 
-export const logger = winston.createLogger({
-  level: config.nodeEnv === 'production' ? 'info' : 'debug',
-  format: logFormat,
-  transports: [
-    new winston.transports.Console({
-      format: logFormat,
-    }),
-    new winston.transports.File({
-      filename: 'logs/error.log',
-      level: 'error',
-    }),
-    new winston.transports.File({
-      filename: 'logs/combined.log',
-    }),
-  ],
-});
+// Create a custom logger that checks blacklist before logging
+const createFilteredLogger = () => {
+  const winstonLogger = winston.createLogger({
+    level: config.nodeEnv === 'production' ? 'info' : 'debug',
+    format: logFormat,
+    transports: [
+      new winston.transports.Console({
+        format: logFormat,
+      }),
+      new winston.transports.File({
+        filename: 'logs/error.log',
+        level: 'error',
+      }),
+      new winston.transports.File({
+        filename: 'logs/combined.log',
+      }),
+    ],
+  });
+
+  // Create a proxy that intercepts error and warn calls
+  return new Proxy(winstonLogger, {
+    get(target, prop) {
+      if (prop === 'error' || prop === 'warn') {
+        return function(message: string, meta?: any) {
+          // Check if the error in meta should be blacklisted
+          if (meta?.error && isErrorBlacklisted(meta.error)) {
+            return; // Don't log blacklisted errors
+          }
+          
+          // Call the original method
+          return target[prop as keyof typeof target].call(target, message, meta);
+        };
+      }
+      
+      // For all other methods, return the original
+      return target[prop as keyof typeof target];
+    }
+  });
+};
+
+export const logger = createFilteredLogger();
 
 // Create logs directory if it doesn't exist
 import { mkdirSync, existsSync } from 'fs';
@@ -139,5 +165,7 @@ export function serializeObject(obj: any, maxDepth = 3, currentDepth = 0): any {
     return `[Error serializing object: ${String(err)}]`;
   }
 }
+
+
 
 export default logger;

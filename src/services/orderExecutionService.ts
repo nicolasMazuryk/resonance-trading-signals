@@ -3,7 +3,6 @@ import { config } from '../config';
 import { logger, serializeError } from '../utils/logger';
 import { ExchangeService } from './exchangeService';
 import { FileStorage } from './fileStorage';
-import { SlackService } from './slackService';
 import { PositionService } from './positionService';
 import { AnalyticsService } from './analyticsService';
 import { ConditionalOrder } from '../types';
@@ -16,7 +15,6 @@ export class OrderExecutionService {
   constructor(
     private exchangeService: ExchangeService,
     private fileStorage: FileStorage,
-    private slackService: SlackService,
     private positionService: PositionService
   ) {
     this.analyticsService = new AnalyticsService(fileStorage);
@@ -64,12 +62,6 @@ export class OrderExecutionService {
       }
     } catch (error) {
       logger.error('Failed to process signal', { error: serializeError(error), signal });
-      
-      await this.slackService.sendOrderFailureAlert(
-        signal.symbol,
-        signal.type,
-        error instanceof Error ? error.message : String(error)
-      );
       
       throw error;
     }

@@ -180,17 +180,7 @@ export interface OverallAnalytics {
   updatedAt: Date;
 }
 
-export interface SlackAlert {
-  text: string;
-  attachments?: Array<{
-    color: string;
-    fields: Array<{
-      title: string;
-      value: string;
-      short: boolean;
-    }>;
-  }>;
-}
+
 
 export interface HealthStatus {
   database: boolean;

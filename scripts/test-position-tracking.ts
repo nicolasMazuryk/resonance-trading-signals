@@ -3,7 +3,6 @@ import { FileStorage } from '../src/services/fileStorage';
 import { PositionService } from '../src/services/positionService';
 import { OrderExecutionService } from '../src/services/orderExecutionService';
 import { ExchangeService } from '../src/services/exchangeService';
-import { SlackService } from '../src/services/slackService';
 import { Signal } from '../src/types';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -15,11 +14,9 @@ export async function testPositionTracking() {
   const fileStorage = new FileStorage();
   const positionService = new PositionService(fileStorage);
   const exchangeService = new ExchangeService();
-  const slackService = new SlackService();
   const orderExecutionService = new OrderExecutionService(
     exchangeService,
     fileStorage,
-    slackService,
     positionService
   );
 
@@ -98,11 +95,14 @@ export async function testPositionTracking() {
   console.log(`Errors: ${errors}`);
 
   // Get position summary
-  const summary = orderExecutionService.getPositionsSummary();
+  const allPositions = fileStorage.getPositions();
+  const openPositions = allPositions.filter(p => p.status === 'open');
+  const totalPnL = allPositions.reduce((sum, pos) => sum + (pos.realizedPnL || 0), 0);
+  
   console.log('\n📊 Position Summary:');
   console.log('===================');
-  console.log(`Open positions: ${summary.openPositions}`);
-  console.log(`Total PnL: ${summary.totalPnL?.toFixed(2) || '0.00'} USDT`);
+  console.log(`Open positions: ${openPositions.length}`);
+  console.log(`Total PnL: ${totalPnL.toFixed(2)} USDT`);
 
   // Get file storage summary
   const fileSummary = fileStorage.getSummaryStats();
@@ -115,11 +115,10 @@ export async function testPositionTracking() {
   console.log(`Closed positions: ${fileSummary.closedPositions}`);
 
   // Show some example positions
-  const positions = fileStorage.getPositions();
-  if (positions.length > 0) {
+  if (allPositions.length > 0) {
     console.log('\n🔍 Example Positions:');
     console.log('====================');
-    positions.slice(0, 3).forEach((pos, index) => {
+    allPositions.slice(0, 3).forEach((pos, index) => {
       console.log(`${index + 1}. ${pos.symbol} ${pos.side} - Status: ${pos.status}`);
       console.log(`   Entry: ${pos.entryPrice} | Current: ${pos.currentPrice}`);
       console.log(`   Size: ${pos.sizeUsdt} USDT | Remaining: ${pos.remainingSizeUsdt} USDT`);

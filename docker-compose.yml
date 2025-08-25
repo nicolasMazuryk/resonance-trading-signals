@@ -16,7 +16,7 @@ services:
       - DEFAULT_LEVERAGE=${DEFAULT_LEVERAGE:-10}
       - ORDER_SLIPPAGE_TOLERANCE=${ORDER_SLIPPAGE_TOLERANCE:-0.2}
       - MAX_SIGNAL_AGE_MS=${MAX_SIGNAL_AGE_MS:-90000}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

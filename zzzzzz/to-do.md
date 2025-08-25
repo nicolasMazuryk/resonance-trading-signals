@@ -1,16 +1,15 @@
 
-- end-to-end testing
 
-- duplicated error messages (thrown)
-- log error only on the higher level (but keep the error cascade to identify the exact place)
 - list of ignored errors
--
 
 - alerts (cloudwatch logs)
 - deployment
 
 ----- refactor
 1. remove unnecessary data (channelId)
+
+- duplicated error messages (thrown)
+- log error only on the higher level (but keep the error cascade to identify the exact place)
 
 -----------------------
 Strategy #2
