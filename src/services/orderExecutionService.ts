@@ -32,14 +32,16 @@ export class OrderExecutionService {
       }
 
       // Check signal age
-      // const signalAge = Date.now() - signal.timestamp.getTime();
-      // if (signalAge > config.maxSignalAgeMs) {
-      //   logger.warn('Signal too old, skipping', { 
-      //     signalAge, 
-      //     maxAge: config.maxSignalAgeMs,
-      //     messageHash: signal.messageHash 
-      //   });
-
+      const signalAge = Date.now() - signal.timestamp.getTime();
+      if (signalAge > config.maxSignalAgeMs) {
+        logger.warn('Signal too old, skipping', { 
+          signalAge, 
+          maxAge: config.maxSignalAgeMs,
+          messageHash: signal.messageHash 
+        });
+        return;
+      }
+      
       // Save signal to file storage
       this.fileStorage.saveSignal(signal);
 

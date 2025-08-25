@@ -1,5 +1,6 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
+import { NewMessage } from 'telegram/events';
 import { config } from '../config';
 import { logger, serializeError, serializeObject } from '../utils/logger';
 import { SignalParser } from '../parsers/signalParser';
@@ -118,7 +119,8 @@ export class TelegramService {
             
             // Don't re-throw to prevent the application from crashing
           }
-        }
+        },
+        new NewMessage({})
       );
       logger.info('Event handler registered successfully');
     } catch (handlerError) {
@@ -226,11 +228,6 @@ export class TelegramService {
       if (!isAllowed) {
         return;
       }
-
-      // Skip messages from bots (optional - remove if you want to process bot messages)
-    //   if (message.senderId && 'bot' in message.senderId) {
-    //     return;
-    //   }
 
       const messageText = message.text;
       const messageId = message.id || 0;

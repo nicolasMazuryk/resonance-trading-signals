@@ -17,8 +17,6 @@ export class ExchangeService {
     this.exchange = new ExchangeClass({
       apiKey: config.exchange.apiKey,
       secret: config.exchange.apiSecret,
-      // sandbox: config.nodeEnv === 'development',
-      // enableRateLimit: true,
     });
 
     logger.info('Exchange service initialized', { 
