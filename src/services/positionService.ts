@@ -95,16 +95,26 @@ export class PositionService {
       totalClosedQuantity += partialClose.closeQuantity;
     }
 
-    // Calculate new breakeven for remaining position
-    // Formula: (Entry Price * Total Quantity - Realized PnL) / Remaining Quantity
-    const totalQuantity = position.quantity;
     const remainingQuantity = position.remainingQuantity;
     
     if (remainingQuantity <= 0) {
       return position.entryPrice; // Position fully closed
     }
 
-    const breakevenPrice = (position.entryPrice * totalQuantity - totalRealizedPnL) / remainingQuantity;
+    // Correct breakeven calculation based on position direction:
+    // For LONG positions: Entry Price - (Total Realized PnL / Remaining Quantity)
+    // For SHORT positions: Entry Price + (Total Realized PnL / Remaining Quantity)
+    let breakevenPrice: number;
+    
+    if (position.side === 'LONG') {
+      // For LONG: if we made profit, breakeven is below entry (can afford to lose profit)
+      // If we made loss, breakeven is above entry (need to make up loss)
+      breakevenPrice = position.entryPrice - (totalRealizedPnL / remainingQuantity);
+    } else {
+      // For SHORT: if we made profit, breakeven is above entry (can afford to lose profit)
+      // If we made loss, breakeven is below entry (need to make up loss)
+      breakevenPrice = position.entryPrice + (totalRealizedPnL / remainingQuantity);
+    }
     
     return breakevenPrice;
   }

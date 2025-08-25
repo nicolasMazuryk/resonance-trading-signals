@@ -110,7 +110,7 @@ export interface PositionAnalytics {
   totalPnL: number; // realized + unrealized
   
   // Trade classification
-  tradeResult: 'profitable' | 'breakeven' | 'loss';
+  tradeResult: 'profitable' | 'breakeven' | 'loss' | 'none';
   profitPercent?: number;
   
   // Timing
@@ -144,6 +144,8 @@ export interface OverallAnalytics {
   breakevenTradesPercent: number;
   lossTrades: number;
   lossTradesPercent: number;
+  noneTrades: number;
+  noneTradesPercent: number;
   
   // Financial metrics
   totalSlippage: number;

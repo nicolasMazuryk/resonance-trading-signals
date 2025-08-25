@@ -8,6 +8,7 @@ import { PositionService } from './positionService';
 import { AnalyticsService } from './analyticsService';
 import { ConditionalOrder } from '../types';
 import { calculateTakerFee } from '../utils/feeCalculator';
+import * as ccxt from 'ccxt';
 
 export class OrderExecutionService {
   private analyticsService: AnalyticsService;
@@ -40,15 +41,6 @@ export class OrderExecutionService {
       //     maxAge: config.maxSignalAgeMs,
       //     messageHash: signal.messageHash 
       //   });
-        
-      //   await this.slackService.sendStaleSignalAlert(
-      //     signal.symbol,
-      //     signal.type,
-      //     signalAge,
-      //     config.maxSignalAgeMs
-      //   );
-      //   return;
-      // }
 
       // Save signal to file storage
       this.fileStorage.saveSignal(signal);
@@ -132,10 +124,12 @@ export class OrderExecutionService {
         throw new Error(`Partial close order below minimum notional or quantity for ${signal.symbol}`);
       }
 
+      // Use reduce-only market order for partial close to ensure we only close positions
       const order = await this.exchangeService.placeMarketOrder(
         signal.symbol,
         orderSide,
-        roundedCloseQuantity
+        roundedCloseQuantity,
+        true // reduceOnly = true for closing positions
       );
 
       // Calculate fees for the partial close (taker fee for market order)
@@ -247,64 +241,8 @@ export class OrderExecutionService {
         throw new Error(`No open position found for ${signal.symbol}`);
       }
 
-      // Cancel conditional orders based on close reason
-      if (signal.reason === 'Take profit achieved') {
-        // Cancel stop-loss order since take-profit was hit
-        if (position.stopLossOrderId) {
-          try {
-            await this.exchangeService.cancelOrder(signal.symbol, position.stopLossOrderId);
-            this.fileStorage.updateConditionalOrder(`sl_${position.id}`, { status: 'cancelled' });
-            logger.info('Stop-loss order cancelled due to take-profit achievement', {
-              positionId: position.id,
-              stopLossOrderId: position.stopLossOrderId
-            });
-          } catch (error) {
-            logger.warn('Failed to cancel stop-loss order', { 
-              error: serializeError(error), 
-              stopLossOrderId: position.stopLossOrderId 
-            });
-          }
-        }
-      } else if (signal.reason === 'Stop loss') {
-        // Cancel take-profit order since stop-loss was hit
-        if (position.takeProfitOrderId) {
-          try {
-            await this.exchangeService.cancelOrder(signal.symbol, position.takeProfitOrderId);
-            this.fileStorage.updateConditionalOrder(`tp_${position.id}`, { status: 'cancelled' });
-            logger.info('Take-profit order cancelled due to stop-loss hit', {
-              positionId: position.id,
-              takeProfitOrderId: position.takeProfitOrderId
-            });
-          } catch (error) {
-            logger.warn('Failed to cancel take-profit order', { 
-              error: serializeError(error), 
-              takeProfitOrderId: position.takeProfitOrderId 
-            });
-          }
-        }
-      } else if (signal.reason === 'Breakeven') {
-        // Cancel take-profit order since we're closing at breakeven
-        if (position.takeProfitOrderId) {
-          try {
-            await this.exchangeService.cancelOrder(signal.symbol, position.takeProfitOrderId);
-            this.fileStorage.updateConditionalOrder(`tp_${position.id}`, { status: 'cancelled' });
-            logger.info('Take-profit order cancelled due to breakeven close', {
-              positionId: position.id,
-              takeProfitOrderId: position.takeProfitOrderId
-            });
-          } catch (error) {
-            logger.warn('Failed to cancel take-profit order', { 
-              error: serializeError(error), 
-              takeProfitOrderId: position.takeProfitOrderId 
-            });
-          }
-        }
-        // Note: Stop-loss order is already at breakeven price, so we don't cancel it
-        logger.info('Take-profit order cancelled due to breakeven close', {
-          positionId: position.id,
-          closeReason: signal.reason
-        });
-      }
+      // Cancel pending orders based on close reason
+      await this.cancelPendingOrdersForClose(signal, position);
 
       // Round the close quantity and check minimum requirements
       const market = await this.exchangeService.getMarket(signal.symbol);
@@ -321,55 +259,91 @@ export class OrderExecutionService {
         throw new Error(`Close order below minimum notional or quantity for ${signal.symbol}`);
       }
 
-      // Execute close order on exchange
+      // Execute close order on exchange (use reduce-only to ensure we only close positions)
       const orderSide = position.side === 'LONG' ? 'sell' : 'buy';
       
-      const order = await this.exchangeService.placeMarketOrder(
-        signal.symbol,
-        orderSide,
-        roundedCloseQuantity
-      );
+      let closeOrder: Order;
+      let closeData: any;
 
-      // Calculate fees for the close order (taker fee for market order)
-      const closeOrderFee = calculateTakerFee(roundedCloseQuantity, signal.closePrice, config.exchange.fees.taker);
-      
-      // Update position tracking with actual executed quantity and calculated fees
-      const closeData = {
-        closeQuantity: roundedCloseQuantity,
-        closeSizeUsdt: roundedCloseQuantity * signal.closePrice,
-        fee: closeOrderFee,
-        exchangeOrderId: order.id
-      };
+      try {
+        // Try to place reduce-only market order
+        const order = await this.exchangeService.placeMarketOrder(
+          signal.symbol,
+          orderSide,
+          roundedCloseQuantity,
+          true // reduceOnly = true for closing positions
+        );
 
+        // Market order was successful - use this order information
+        closeOrder = this.createOrderFromExchangeOrder(order, signal, orderSide, roundedCloseQuantity);
+        closeData = {
+          closeQuantity: roundedCloseQuantity,
+          closeSizeUsdt: roundedCloseQuantity * signal.closePrice,
+          fee: calculateTakerFee(roundedCloseQuantity, signal.closePrice, config.exchange.fees.taker),
+          exchangeOrderId: order.id
+        };
+
+        // Cancel any remaining pending orders since position is now closed
+        await this.cancelRemainingPendingOrders(signal.symbol, position, signal.reason);
+
+        logger.info('Position closed via market order', { 
+          positionId: position.id, 
+          closeReason: signal.reason,
+          orderId: order.id
+        });
+
+      } catch (error) {
+        // Check if this is a reduce-only error (position already closed by stop-loss)
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isReduceOnlyError = this.isReduceOnlyError(error);
+
+        if (isReduceOnlyError) {
+          // Position was already closed by stop-loss order - query the executed order
+          logger.info('Reduce-only order failed, position already closed by stop-loss', {
+            positionId: position.id,
+            closeReason: signal.reason,
+            error: errorMessage
+          });
+
+          // Query the executed order based on close reason
+          const executedOrder = await this.queryExecutedOrder(signal.symbol, position, signal.reason);
+          
+          if (executedOrder) {
+            closeOrder = this.createOrderFromExchangeOrder(executedOrder, signal, orderSide, executedOrder.filled || 0);
+            closeData = {
+              closeQuantity: executedOrder.filled || 0,
+              closeSizeUsdt: (executedOrder.filled || 0) * (executedOrder.average || signal.closePrice),
+              fee: executedOrder.fee?.cost || 0,
+              exchangeOrderId: executedOrder.id
+            };
+
+            logger.info('Found executed order', {
+              positionId: position.id,
+              orderId: executedOrder.id,
+              filledAmount: executedOrder.filled,
+              averagePrice: executedOrder.average,
+              closeReason: signal.reason
+            });
+          } else {
+            throw new Error('Position appears to be closed but could not find executed order');
+          }
+        } else {
+          // This is a different error, re-throw
+          throw error;
+        }
+      }
+
+      // Update position tracking with actual executed quantity and fees
       const updatedPosition = this.positionService.handlePositionClose(signal, closeData);
-
-      // Create Order object for analytics
-      const closeOrder: Order = {
-        id: order.id,
-        signalId: signal.messageHash,
-        symbol: signal.symbol,
-        side: orderSide,
-        type: 'market',
-        amount: roundedCloseQuantity,
-        price: signal.closePrice,
-        status: order.status as 'pending' | 'filled' | 'cancelled' | 'failed',
-        exchangeOrderId: order.id,
-        createdAt: new Date(order.timestamp),
-        updatedAt: new Date(),
-        ...(order.filled && { filledAmount: order.filled }),
-        ...(order.average && { filledPrice: order.average }),
-        ...(order.fee?.cost && { fee: order.fee.cost })
-      };
 
       // Update position exit analytics
       await this.analyticsService.updatePositionExitAnalytics(updatedPosition, closeOrder, signal.closePrice);
 
-      logger.info('Position closed', { 
+      logger.info('Position closed successfully', { 
         positionId: updatedPosition.id, 
         closeReason: signal.reason,
         finalPnL: updatedPosition.realizedPnL,
-        calculatedFee: closeOrderFee,
-        feeRate: config.exchange.fees.taker
+        orderId: closeOrder.exchangeOrderId
       });
     } catch (error) {
       logger.error('Failed to execute close signal', { error: serializeError(error), signal });
@@ -511,5 +485,238 @@ export class OrderExecutionService {
     });
   }
 
+  /**
+   * Cancel pending orders based on close reason
+   */
+  private async cancelPendingOrdersForClose(signal: CloseSignal, position: any): Promise<void> {
+    if (signal.reason === 'Take profit achieved') {
+      // Cancel stop-loss order since take-profit was hit
+      if (position.stopLossOrderId) {
+        try {
+          await this.exchangeService.cancelOrder(signal.symbol, position.stopLossOrderId);
+          this.fileStorage.updateConditionalOrder(`sl_${position.id}`, { status: 'cancelled' });
+          logger.info('Stop-loss order cancelled due to take-profit achievement', {
+            positionId: position.id,
+            stopLossOrderId: position.stopLossOrderId
+          });
+        } catch (error) {
+          logger.warn('Failed to cancel stop-loss order', { 
+            error: serializeError(error), 
+            stopLossOrderId: position.stopLossOrderId 
+          });
+        }
+      }
+    } else if (signal.reason === 'Stop loss') {
+      // Cancel take-profit order since stop-loss was hit
+      if (position.takeProfitOrderId) {
+        try {
+          await this.exchangeService.cancelOrder(signal.symbol, position.takeProfitOrderId);
+          this.fileStorage.updateConditionalOrder(`tp_${position.id}`, { status: 'cancelled' });
+          logger.info('Take-profit order cancelled due to stop-loss hit', {
+            positionId: position.id,
+            takeProfitOrderId: position.takeProfitOrderId
+          });
+        } catch (error) {
+          logger.warn('Failed to cancel take-profit order', { 
+            error: serializeError(error), 
+            takeProfitOrderId: position.takeProfitOrderId 
+          });
+        }
+      }
+    } else if (signal.reason === 'Breakeven') {
+      // Cancel take-profit order since we're closing at breakeven
+      if (position.takeProfitOrderId) {
+        try {
+          await this.exchangeService.cancelOrder(signal.symbol, position.takeProfitOrderId);
+          this.fileStorage.updateConditionalOrder(`tp_${position.id}`, { status: 'cancelled' });
+          logger.info('Take-profit order cancelled due to breakeven close', {
+            positionId: position.id,
+            takeProfitOrderId: position.takeProfitOrderId
+          });
+        } catch (error) {
+          logger.warn('Failed to cancel take-profit order', { 
+            error: serializeError(error), 
+            takeProfitOrderId: position.takeProfitOrderId 
+          });
+        }
+      }
+      // Note: Stop-loss order is already at breakeven price, so we don't cancel it
+    }
+  }
+
+  /**
+   * Query for executed order when reduce-only market order fails
+   */
+  private async queryExecutedOrder(symbol: string, position: any, closeReason: string): Promise<ccxt.Order | null> {
+    try {
+      let orderId: string | undefined;
+      let orderType: string;
+
+      // Determine which order to query based on close reason
+      if (closeReason === 'Stop loss') {
+        orderId = position.stopLossOrderId;
+        orderType = 'stop-loss';
+      } else if (closeReason === 'Take profit achieved') {
+        orderId = position.takeProfitOrderId;
+        orderType = 'take-profit';
+      } else if (closeReason === 'Breakeven') {
+        // For breakeven, we might have either stop-loss or take-profit executed
+        // Try stop-loss first (since it's usually at breakeven price)
+        orderId = position.stopLossOrderId;
+        orderType = 'stop-loss';
+      } else {
+        logger.warn('Unknown close reason, cannot determine which order to query', { closeReason });
+        return null;
+      }
+
+      // First try to get the order by ID if we have it
+      if (orderId) {
+        try {
+          const order = await this.exchangeService.getOrder(symbol, orderId);
+          if (order.status === 'closed' || order.status === 'filled') {
+            logger.info(`Found executed ${orderType} order by ID`, {
+              orderId,
+              orderType,
+              filledAmount: order.filled,
+              averagePrice: order.average
+            });
+            return order;
+          }
+        } catch (error) {
+          logger.warn(`Failed to fetch ${orderType} order by ID`, { 
+            error: serializeError(error), 
+            orderId,
+            orderType
+          });
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.error('Failed to query executed order', { 
+        error: serializeError(error), 
+        symbol, 
+        positionId: position.id,
+        closeReason
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Cancel any remaining pending orders after successful market order execution
+   * Note: This cancels the same type of order that matches the close reason
+   * (since the opposite order was already cancelled in cancelPendingOrdersForClose)
+   */
+  private async cancelRemainingPendingOrders(symbol: string, position: any, closeReason: string): Promise<void> {
+    try {
+      let orderId: string | undefined;
+      let orderType: string;
+      let conditionalOrderId: string;
+
+      // Determine which order to cancel based on close reason (same type)
+      if (closeReason === 'Stop loss') {
+        orderId = position.stopLossOrderId;
+        orderType = 'stop-loss';
+        conditionalOrderId = `sl_${position.id}`;
+      } else if (closeReason === 'Take profit achieved') {
+        orderId = position.takeProfitOrderId;
+        orderType = 'take-profit';
+        conditionalOrderId = `tp_${position.id}`;
+      } else if (closeReason === 'Breakeven') {
+        // For breakeven, we might have either stop-loss or take-profit pending
+        // Since we're at breakeven, the stop-loss is usually at breakeven price
+        // and take-profit was already cancelled in cancelPendingOrdersForClose
+        orderId = position.stopLossOrderId;
+        orderType = 'stop-loss';
+        conditionalOrderId = `sl_${position.id}`;
+      } else {
+        logger.warn('Unknown close reason, cannot determine which order to cancel', { closeReason });
+        return;
+      }
+
+      // Cancel the pending order if it exists
+      if (orderId) {
+        try {
+          await this.exchangeService.cancelOrder(symbol, orderId);
+          this.fileStorage.updateConditionalOrder(conditionalOrderId, { status: 'cancelled' });
+          
+          logger.info('Cancelled remaining pending order after successful market close', {
+            positionId: position.id,
+            orderId: orderId,
+            orderType: orderType,
+            closeReason: closeReason,
+            symbol
+          });
+        } catch (error) {
+          logger.warn('Failed to cancel remaining pending order', {
+            error: serializeError(error),
+            positionId: position.id,
+            orderId: orderId,
+            orderType: orderType,
+            closeReason: closeReason,
+            symbol
+          });
+        }
+      } else {
+        logger.debug('No pending order to cancel for close reason', {
+          positionId: position.id,
+          closeReason: closeReason,
+          symbol
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to cancel remaining pending orders', {
+        error: serializeError(error),
+        positionId: position.id,
+        closeReason: closeReason,
+        symbol
+      });
+    }
+  }
+
+  /**
+   * Check if an error is a reduce-only error (position already closed)
+   */
+  private isReduceOnlyError(error: any): boolean {
+    // Check for Binance ReduceOnly Order is rejected error
+    if (typeof error === 'object' && error !== null) {
+      if (error.code === -2022 && typeof error.msg === 'string' && /ReduceOnly Order is rejected/i.test(error.msg)) {
+        return true;
+      }
+      // Some libraries may stringify the error object
+      if (typeof error.message === 'string' && /ReduceOnly Order is rejected/i.test(error.message)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Create Order object from exchange order
+   */
+  private createOrderFromExchangeOrder(
+    exchangeOrder: ccxt.Order, 
+    signal: CloseSignal, 
+    orderSide: OrderSide, 
+    amount: number
+  ): Order {
+    return {
+      id: exchangeOrder.id,
+      signalId: signal.messageHash,
+      symbol: signal.symbol,
+      side: orderSide,
+      type: 'market',
+      amount: amount,
+      price: signal.closePrice,
+      status: exchangeOrder.status as 'pending' | 'filled' | 'cancelled' | 'failed',
+      exchangeOrderId: exchangeOrder.id,
+      createdAt: new Date(exchangeOrder.timestamp),
+      updatedAt: new Date(),
+      ...(exchangeOrder.filled && { filledAmount: exchangeOrder.filled }),
+      ...(exchangeOrder.average && { filledPrice: exchangeOrder.average }),
+      ...(exchangeOrder.fee?.cost && { fee: exchangeOrder.fee.cost })
+    };
+  }
 
 }

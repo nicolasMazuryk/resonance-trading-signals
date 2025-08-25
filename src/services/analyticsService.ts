@@ -41,12 +41,19 @@ export class AnalyticsService {
       const entrySlippage = position.side === 'LONG' 
         ? (actualEntryPrice - signalEntryPrice) * entryOrder.filledAmount
         : (signalEntryPrice - actualEntryPrice) * entryOrder.filledAmount;
-      const entrySlippagePercent = ((actualEntryPrice - signalEntryPrice) / signalEntryPrice) * 100;
+      // Calculate slippage percentage based on position direction
+      // For LONG: positive when actual > signal (disadvantage), negative when actual < signal (advantage)
+      // For SHORT: positive when signal > actual (disadvantage), negative when signal < actual (advantage)
+      const entrySlippagePercent = position.side === 'LONG'
+        ? ((actualEntryPrice - signalEntryPrice) / signalEntryPrice) * 100
+        : ((signalEntryPrice - actualEntryPrice) / signalEntryPrice) * 100;
       const entryFees = entryOrder.type === 'market' 
         ? calculateTakerFee(entryOrder.filledAmount, actualEntryPrice, config.exchange.fees.taker)
         : calculateMakerFee(entryOrder.filledAmount, actualEntryPrice, config.exchange.fees.maker);
 
-      const entryExecutionDelayMs = entryOrder.createdAt.getTime() - signal.timestamp.getTime();
+      // Ensure signal timestamp is a Date object
+      const signalTimestamp = signal.timestamp instanceof Date ? signal.timestamp : new Date(signal.timestamp);
+      const entryExecutionDelayMs = entryOrder.createdAt.getTime() - signalTimestamp.getTime();
 
       const positionAnalytics: PositionAnalytics = {
         id: `pa_${position.id}`,
@@ -69,10 +76,10 @@ export class AnalyticsService {
         totalPnL: 0,
         
         // Trade classification (will be updated when position closes)
-        tradeResult: 'loss', // Default, will be updated
+        tradeResult: 'none', // Default, will be updated when position closes
         
         // Timing
-        entryTime: position.entryTime,
+        entryTime: position.entryTime instanceof Date ? position.entryTime : new Date(position.entryTime),
         entryExecutionDelayMs,
         
         createdAt: new Date(),
@@ -127,15 +134,24 @@ export class AnalyticsService {
             ? (signalExitPrice - actualExitPrice) * exitOrder.filledAmount
             : (actualExitPrice - signalExitPrice) * exitOrder.filledAmount)
         : 0;
+      // Calculate exit slippage percentage based on position direction
+      // For LONG: positive when signal > actual (disadvantage), negative when signal < actual (advantage)
+      // For SHORT: positive when actual > signal (disadvantage), negative when actual < signal (advantage)
       const exitSlippagePercent = signalExitPrice 
-        ? ((actualExitPrice - signalExitPrice) / signalExitPrice) * 100
+        ? (position.side === 'LONG'
+            ? ((signalExitPrice - actualExitPrice) / signalExitPrice) * 100
+            : ((actualExitPrice - signalExitPrice) / signalExitPrice) * 100)
         : 0;
       const exitFees = exitOrder.type === 'market' 
         ? calculateTakerFee(exitOrder.filledAmount, actualExitPrice, config.exchange.fees.taker)
         : calculateMakerFee(exitOrder.filledAmount, actualExitPrice, config.exchange.fees.maker);
 
-      const exitExecutionDelayMs = exitOrder.createdAt.getTime() - position.entryTime.getTime();
-      const durationMs = position.closeTime ? position.closeTime.getTime() - position.entryTime.getTime() : 0;
+      // Ensure entryTime and closeTime are Date objects
+      const entryTime = position.entryTime instanceof Date ? position.entryTime : new Date(position.entryTime);
+      const closeTime = position.closeTime instanceof Date ? position.closeTime : (position.closeTime ? new Date(position.closeTime) : null);
+      
+      const exitExecutionDelayMs = exitOrder.createdAt.getTime() - entryTime.getTime();
+      const durationMs = closeTime ? closeTime.getTime() - entryTime.getTime() : 0;
 
       // Calculate total performance
       const totalFees = existingAnalytics.totalFees + exitFees;
@@ -144,7 +160,7 @@ export class AnalyticsService {
       const totalPnL = realizedPnL - totalFees - totalSlippage;
 
       // Classify trade result based on signal type (closeReason), not actual PnL
-      let tradeResult: 'profitable' | 'breakeven' | 'loss';
+      let tradeResult: 'profitable' | 'breakeven' | 'loss' | 'none';
       let profitPercent: number | undefined;
 
       // Calculate profit percent for all close reasons
@@ -157,7 +173,7 @@ export class AnalyticsService {
       } else if (position.closeReason === 'Stop loss') {
         tradeResult = 'loss';
       } else {
-        tradeResult = 'loss';
+        tradeResult = 'none';
       }
 
       const updates: Partial<PositionAnalytics> = {
@@ -174,7 +190,7 @@ export class AnalyticsService {
         exitExecutionDelayMs,
         updatedAt: new Date(),
         ...(signalExitPrice && { signalExitPrice }),
-        ...(position.closeTime && { exitTime: position.closeTime })
+        ...(closeTime && { exitTime: closeTime })
       };
 
       this.fileStorage.updatePositionAnalytics(position.id, updates);
@@ -230,11 +246,13 @@ export class AnalyticsService {
       const profitableTrades = closedAnalytics.filter(pa => pa.tradeResult === 'profitable').length;
       const breakevenTrades = closedAnalytics.filter(pa => pa.tradeResult === 'breakeven').length;
       const lossTrades = closedAnalytics.filter(pa => pa.tradeResult === 'loss').length;
+      const noneTrades = closedAnalytics.filter(pa => pa.tradeResult === 'none').length;
       const totalTrades = closedAnalytics.length;
-
+      
       const profitableTradesPercent = totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
       const breakevenTradesPercent = totalTrades > 0 ? (breakevenTrades / totalTrades) * 100 : 0;
       const lossTradesPercent = totalTrades > 0 ? (lossTrades / totalTrades) * 100 : 0;
+      const noneTradesPercent = totalTrades > 0 ? (noneTrades / totalTrades) * 100 : 0;
 
       // Calculate financial metrics
       const totalSlippage = filteredAnalytics.reduce((sum, pa) => sum + pa.totalSlippage, 0);
@@ -306,6 +324,8 @@ export class AnalyticsService {
         breakevenTradesPercent,
         lossTrades,
         lossTradesPercent,
+        noneTrades,
+        noneTradesPercent,
         
         // Financial metrics
         totalSlippage,

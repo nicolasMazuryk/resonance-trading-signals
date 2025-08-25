@@ -228,7 +228,8 @@ export class ExchangeService {
   async placeMarketOrder(
     symbol: string,
     side: OrderSide,
-    amount: number
+    amount: number,
+    reduceOnly: boolean = false
   ): Promise<ccxt.Order> {
     try {
       const market = await this.getMarket(symbol);
@@ -236,11 +237,15 @@ export class ExchangeService {
       
       const roundedAmount = this.roundAmount(amount, market);
 
+      const orderParams = reduceOnly ? { reduceOnly: true } : undefined;
+
       const order = await this.exchange.createOrder(
         normalizedSymbol,
         'market',
         side,
-        roundedAmount
+        roundedAmount,
+        undefined, // price not needed for market orders
+        orderParams
       );
 
       logger.info('Market order placed', {
@@ -248,6 +253,7 @@ export class ExchangeService {
         side,
         amount: roundedAmount,
         orderId: order.id,
+        reduceOnly,
       });
 
       return order;
@@ -256,7 +262,8 @@ export class ExchangeService {
         error: serializeError(error), 
         symbol, 
         side, 
-        amount
+        amount,
+        reduceOnly
       });
       throw error;
     }

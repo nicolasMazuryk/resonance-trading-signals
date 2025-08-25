@@ -25,8 +25,9 @@ The solution implements a two-step approach that is compatible with Binance Futu
 
 ### New Exchange Service Methods
 
-#### `placeMarketOrder(symbol, side, amount)`
-- Places a simple market order without stop-loss/take-profit
+#### `placeMarketOrder(symbol, side, amount, reduceOnly = false)`
+- Places a market order with optional reduce-only parameter
+- `reduceOnly: true` for closing positions, `reduceOnly: false` (default) for opening positions
 - Returns the executed order details
 
 #### `placeStopLossOrder(symbol, side, amount, stopLossPrice)`

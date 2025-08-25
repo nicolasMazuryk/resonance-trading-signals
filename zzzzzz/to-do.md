@@ -1,7 +1,12 @@
 
 - end-to-end testing
 
-- alerts
+- duplicated error messages (thrown)
+- log error only on the higher level (but keep the error cascade to identify the exact place)
+- list of ignored errors
+-
+
+- alerts (cloudwatch logs)
 - deployment
 
 ----- refactor

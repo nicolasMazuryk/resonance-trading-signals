@@ -42,7 +42,8 @@ Each position is tracked with detailed analytics including:
   - **Profitable**: When close reason is "Take profit achieved"
   - **Breakeven**: When close reason is "Breakeven"
   - **Loss**: When close reason is "Stop loss"
-  - Classification is based on signal type, not actual PnL amount
+- **None**: Default value for positions that haven't been closed yet
+- Classification is based on signal type, not actual PnL amount
   - **Profit Percent**: Calculated for all close reasons using `(totalPnL / position.sizeUsdt) * 100`
 
 - **Timing Information**
@@ -172,7 +173,7 @@ interface PositionAnalytics {
   totalPnL: number; // realized - fees - slippage
   
   // Trade classification
-  tradeResult: 'profitable' | 'breakeven' | 'loss';
+  tradeResult: 'profitable' | 'breakeven' | 'loss' | 'none';
   profitPercent?: number;
   
   // Timing
@@ -207,6 +208,8 @@ interface OverallAnalytics {
   breakevenTradesPercent: number;
   lossTrades: number;
   lossTradesPercent: number;
+  noneTrades: number;
+  noneTradesPercent: number;
   
   // Financial metrics
   totalSlippage: number;
@@ -269,6 +272,11 @@ The old analytics data is preserved in `data/analytics.json` for backward compat
   - **LONG Exit**: `slippage = (signalPrice - actualPrice) * filledAmount`
   - **SHORT Entry**: `slippage = (signalPrice - actualPrice) * filledAmount`
   - **SHORT Exit**: `slippage = (actualPrice - signalPrice) * filledAmount`
+- **Slippage Percentage**: Now also accounts for position direction
+  - **LONG Entry**: `slippagePercent = ((actualPrice - signalPrice) / signalPrice) * 100`
+  - **LONG Exit**: `slippagePercent = ((signalPrice - actualPrice) / signalPrice) * 100`
+  - **SHORT Entry**: `slippagePercent = ((signalPrice - actualPrice) / signalPrice) * 100`
+  - **SHORT Exit**: `slippagePercent = ((actualPrice - signalPrice) / signalPrice) * 100`
 - **Cost-Based Logic**: 
   - Positive slippage = disadvantage (cost)
   - Negative slippage = advantage (savings)
@@ -280,8 +288,19 @@ The old analytics data is preserved in `data/analytics.json` for backward compat
   - "Take profit achieved" → Profitable trade
   - "Breakeven" → Breakeven trade  
   - "Stop loss" → Loss trade
+  - Default value → "None" (for positions that haven't been closed yet)
 - **Profit Percent Calculation**: Now calculated for all close reasons, not just take profit
 - **Consistent Analysis**: This ensures analytics reflect the intended strategy outcome, not just the final PnL
+
+### Reduce-Only Order Safety
+
+- **Position Closing Orders**: All orders that close positions now use `reduceOnly: true`
+  - Close signals (`executeCloseSignal`) use `placeMarketOrder` with `reduceOnly: true`
+  - Partial close signals (`executePartialSignal`) use `placeMarketOrder` with `reduceOnly: true`
+  - Stop-loss orders already use `reduceOnly: true`
+  - Take-profit orders already use `reduceOnly: true`
+- **Safety Benefits**: Prevents accidental position opening and ensures orders only reduce existing positions
+- **Opening Orders**: Market orders for opening positions use `placeMarketOrder` with `reduceOnly: false` (default)
 
 ## Performance Considerations
 
