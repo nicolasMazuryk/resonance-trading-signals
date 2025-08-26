@@ -98,4 +98,6 @@ jspm_packages/
 .DS_Store
 Thumbs.db
 
+terraform/.terraform/
+
 zzzzzz/
