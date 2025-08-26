@@ -152,22 +152,35 @@ export class TelegramService {
         return false;
       }
 
-      // Get chat entity to check username
-      const chatEntity = await this.client.getEntity(chatId);
-      
-      // Check username
+      // First, try to check by username (primary method)
       if (config.telegram.allowedChannels.usernames?.length) {
-        const username = 'username' in chatEntity ? chatEntity.username : undefined;
-        if (username && config.telegram.allowedChannels.usernames.includes(username)) {
-          logger.debug('Message allowed by username', { username, chatId });
+        try {
+          const chatEntity = await this.client.getEntity(chatId);
+          if (chatEntity && 'username' in chatEntity && chatEntity.username) {
+            const username = chatEntity.username;
+            if (config.telegram.allowedChannels.usernames.includes(username)) {
+              logger.debug('Message allowed by username', { username, chatId });
+              return true;
+            }
+          }
+        } catch (entityError) {
+          logger.debug('Could not get chat entity for username check, falling back to chat ID', { 
+            chatId, 
+            error: serializeError(entityError) 
+          });
+        }
+      }
+
+      // Fallback: check by chat ID
+      if (config.telegram.allowedChannels.chatIds?.length) {
+        const chatIdStr = chatId.toString();
+        if (config.telegram.allowedChannels.chatIds.includes(chatIdStr)) {
+          logger.debug('Message allowed by chat ID (fallback)', { chatId: chatIdStr });
           return true;
         }
       }
 
-      logger.debug('Message filtered out - not from allowed channel', { 
-        chatId, 
-        username: 'username' in chatEntity ? chatEntity.username : undefined
-      });
+      logger.debug('Message filtered out - not from allowed channel', { chatId });
       return false;
     } catch (error) {
       logger.error('Error checking if message is from allowed channel', { 
@@ -223,18 +236,29 @@ export class TelegramService {
         return;
       }
 
-      // Check if message is from allowed channel
-      const isAllowed = await this.isMessageFromAllowedChannel(message);
-      if (!isAllowed) {
-        return;
-      }
-
       const messageText = message.text;
       const messageId = message.id || 0;
       const chatId = message.chatId?.toString() || '0';
       const timestamp = message.date ? new Date(message.date * 1000) : new Date(); // Convert Unix timestamp to Date
 
-      logger.debug('Processing Telegram message', {
+      // Check if message is from allowed channel
+      const isAllowed = await this.isMessageFromAllowedChannel(message);
+      if (!isAllowed) {
+        logger.debug('Message filtered out by channel check', { 
+          messageId, 
+          chatId,
+          textPreview: messageText.substring(0, 50) + '...'
+        });
+        return;
+      }
+      
+      logger.debug('Message passed channel filtering', { 
+        messageId, 
+        chatId,
+        textPreview: messageText.substring(0, 50) + '...'
+      });
+
+      logger.info('Processing Telegram message', {
         messageId,
         chatId,
         timestamp,

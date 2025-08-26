@@ -12,6 +12,7 @@ export interface Config {
     // Add filtering options for specific bot channels
     allowedChannels?: {
       usernames?: string[];
+      chatIds?: string[];
     };
   };
   exchange: {
@@ -42,6 +43,7 @@ const getConfig = (): Config => {
         botId: process.env['TELEGRAM_BOT_ID'] || 'test_bot_id',
         allowedChannels: {
           usernames: process.env['TELEGRAM_ALLOWED_USERNAMES']?.split(',') || [],
+          chatIds: process.env['TELEGRAM_ALLOWED_CHAT_IDS']?.split(',') || [],
         },
       },
       exchange: {
@@ -68,6 +70,7 @@ const getConfig = (): Config => {
       botId: process.env['TELEGRAM_BOT_ID'] || '',
       allowedChannels: {
         usernames: process.env['TELEGRAM_ALLOWED_USERNAMES']?.split(',') || [],
+        chatIds: process.env['TELEGRAM_ALLOWED_CHAT_IDS']?.split(',') || [],
       },
     },
     exchange: {
