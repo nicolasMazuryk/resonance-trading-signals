@@ -353,7 +353,7 @@ export class OrderExecutionService {
     await this.exchangeService.setLeverage(signal.symbol, config.exchange.defaultLeverage);
 
     // Calculate order amount
-    const orderAmount = signal.sizeUsdt / signal.price / 100;
+    const orderAmount = signal.sizeUsdt / signal.price;
     const orderSide: OrderSide = signal.action === 'LONG' ? 'buy' : 'sell';
 
     // Round the order amount and check minimum requirements
