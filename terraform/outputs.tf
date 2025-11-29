@@ -1,11 +1,11 @@
 output "ecs_cluster_name" {
   description = "Name of the ECS cluster"
-  value       = aws_ecs_cluster.trading_bots_cluster.name
+  value       = aws_ecs_cluster.resonance_signals_bot_cluster.name
 }
 
 output "ecs_cluster_arn" {
   description = "ARN of the ECS cluster"
-  value       = aws_ecs_cluster.trading_bots_cluster.arn
+  value       = aws_ecs_cluster.resonance_signals_bot_cluster.arn
 }
 
 # output "service_arns" {

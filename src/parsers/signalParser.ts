@@ -19,7 +19,7 @@ export class SignalParser {
       }
 
       // Try to match closing signal
-      if (messageText.includes('Закрытие:') || messageText.includes('Closing:')) {
+      if (messageText.includes('Position Closed') || messageText.includes('Closing:')) {
         return this.parseClosingSignal(messageText, messageId, channelId, timestamp);
       }
 
@@ -58,8 +58,8 @@ export class SignalParser {
       if (!actionMatch || !actionMatch[1]) return null;
       const action = actionMatch[1].toUpperCase() as 'LONG' | 'SHORT';
 
-      // Extract symbol - handle various formats (both emoji and non-emoji)
-      const symbolMatch = messageText.match(/(?:📈|📉)?\s*Пара:\s*(?:`)?([A-Z0-9]{2,12}\/USDT)(?:`)?/i);
+      // Extract symbol - handle various formats (both emoji and non-emoji, English and Russian)
+      const symbolMatch = messageText.match(/(?:📉|📈)?\s*(?:Pair|Пара):\s*(?:`)?([A-Z0-9]{2,12}\/USDT)(?:`)?/i);
       if (!symbolMatch || !symbolMatch[1]) return null;
       const symbol = symbolMatch[1].toUpperCase();
 
@@ -129,11 +129,13 @@ export class SignalParser {
       // Extract reason - handle various formats and languages
       let reason: 'Take profit achieved' | 'Stop loss' | 'Breakeven';
       
-      if (messageText.includes('🔥 Closing: Take profit achieved') || 
+      if (messageText.includes('🔥 Closing: Take profit achieved!') ||
           messageText.includes('🎉 Congratulations on your profit') ||
           messageText.includes('Closing: Take profit achieved')) {
         reason = 'Take profit achieved';
-      } else if (messageText.includes('❌ Закрытие: Стоп лосс') || 
+      } else if (messageText.includes('🛑 Position Closed by Stop-Loss') ||
+                 messageText.includes('Position Closed by Stop-Loss') ||
+                 messageText.includes('❌ Закрытие: Стоп лосс') || 
                  messageText.includes('❌ Closing: Stop loss') ||
                  messageText.includes('Closing: Stop loss')) {
         reason = 'Stop loss';
@@ -143,13 +145,15 @@ export class SignalParser {
         reason = 'Breakeven';
       } else {
         // Try to match more flexible patterns
-        const reasonMatch = messageText.match(/(?:❌|🔥|🔄)?\s*(?:Закрытие|Closing):\s*(Take profit achieved|Стоп лосс|Stop loss|Breakeven)/i);
+        const reasonMatch = messageText.match(/(?:❌|🔥|🔄|🛑)?\s*(?:Закрытие|Closing|Position Closed by):\s*(Take profit achieved!?|Стоп лосс|Stop loss|Stop-Loss|Breakeven)/i);
         if (!reasonMatch || !reasonMatch[1]) return null;
         
         const reasonText = reasonMatch[1];
-        if (reasonText.toLowerCase() === 'take profit achieved') {
+        if (reasonText.toLowerCase().includes('take profit achieved')) {
           reason = 'Take profit achieved';
-        } else if (reasonText.toLowerCase() === 'стоп лосс' || reasonText.toLowerCase() === 'stop loss') {
+        } else if (reasonText.toLowerCase().includes('стоп лосс') || 
+                   reasonText.toLowerCase().includes('stop loss') ||
+                   reasonText.toLowerCase().includes('stop-loss')) {
           reason = 'Stop loss';
         } else if (reasonText.toLowerCase() === 'breakeven') {
           reason = 'Breakeven';
@@ -158,13 +162,13 @@ export class SignalParser {
         }
       }
 
-      // Extract symbol
-      const symbolMatch = messageText.match(/💱\s*Пара:\s*(?:`)?([A-Z0-9]{2,12}\/USDT)(?:`)?/i);
+      // Extract symbol - handle both English and Russian
+      const symbolMatch = messageText.match(/💱\s*(?:Пара|Pair):\s*(?:`)?([A-Z0-9]{2,12}\/USDT)(?:`)?/i);
       if (!symbolMatch || !symbolMatch[1]) return null;
       const symbol = symbolMatch[1].toUpperCase();
 
-      // Extract close price - handle various formats
-      const priceMatch = messageText.match(/(?:📊\s*)?Price:\s*(?:`)?([0-9]+(?:\.[0-9]+)?(?:e-[0-9]+)?)(?:`)?/);
+      // Extract close price - handle both "Price:" and "Closing price:" formats
+      const priceMatch = messageText.match(/(?:📊\s*)?(?:Closing price|Price):\s*(?:`)?([0-9]+(?:\.[0-9]+)?(?:e-[0-9]+)?)(?:`)?/i);
       if (!priceMatch || !priceMatch[1]) return null;
       const closePrice = parseFloat(priceMatch[1]);
 

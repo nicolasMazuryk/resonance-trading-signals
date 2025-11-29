@@ -5,16 +5,16 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.82.2" # Use version constraint for flexibility
+      version = "~> 6.12.0"
     }
   }
-  required_version = "~> 1.10.3" # Use version constraint for flexibility
+  required_version = "~> 1.13.5"
 }
 
 locals {
   # Common tags to be applied to all resources
   common_tags = {
-    Project   = "trading-bots"
+    Project   = "resonance-signals-bot"
     ManagedBy = "terraform"
   }
 
@@ -46,10 +46,10 @@ resource "aws_default_vpc" "default" {
 }
 
 resource "aws_default_subnet" "default_a" {
-  availability_zone = "${var.aws_region}a"
+  availability_zone = "${var.aws_region}c"
 
   tags = {
-    Name = "default-a"
+    Name = "default-c"
   }
 }
 
@@ -58,9 +58,9 @@ resource "aws_default_subnet" "default_a" {
 # - Outbound allowed by default
 # - Inbound restricted (since you probably only need outbound to exchanges)
 ###############################################################################
-resource "aws_security_group" "trading_bot_security_group" {
-  name        = "trading-bot-security-group"
-  description = "Security group for trading bot Fargate tasks"
+resource "aws_security_group" "resonance_signals_bot_security_group" {
+  name        = "resonance-signals-bot-security-group"
+  description = "Security group for resonance signals bot Fargate tasks"
   vpc_id      = aws_default_vpc.default.id
 
   # No inbound rules needed if you don't accept inbound traffic
@@ -81,15 +81,15 @@ resource "aws_security_group" "trading_bot_security_group" {
   }
 
   tags = {
-    Name = "trading-bot-security-group"
+    Name = "resonance-signals-bot-security-group"
   }
 }
 
 ###############################################################################
 # ECS Cluster
 ###############################################################################
-resource "aws_ecs_cluster" "trading_bots_cluster" {
-  name = "trading-bots-cluster"
+resource "aws_ecs_cluster" "resonance_signals_bot_cluster" {
+  name = "resonance-signals-bot-cluster"
 
   setting {
     name  = "containerInsights"
@@ -100,12 +100,12 @@ resource "aws_ecs_cluster" "trading_bots_cluster" {
 ###############################################################################
 # ECS Task IAM Role
 ###############################################################################
-resource "aws_iam_role" "ecs_task_execution_role" {
-  name               = "trading-bot-execution-role"
-  assume_role_policy = data.aws_iam_policy_document.ecs_task_execution_role.json
+resource "aws_iam_role" "resonance_signals_bot_ecs_task_execution_role" {
+  name               = "resonance-signals-bot-ecs-task-execution-role"
+  assume_role_policy = data.aws_iam_policy_document.resonance_signals_bot_ecs_task_execution_role.json
 }
 
-data "aws_iam_policy_document" "ecs_task_execution_role" {
+data "aws_iam_policy_document" "resonance_signals_bot_ecs_task_execution_role" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
@@ -115,17 +115,17 @@ data "aws_iam_policy_document" "ecs_task_execution_role" {
   }
 }
 
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
+resource "aws_iam_role_policy_attachment" "resonance_signals_bot_ecs_task_execution_policy" {
+  role       = aws_iam_role.resonance_signals_bot_ecs_task_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role" "ecs_task_role" {
-  name               = "trading-bot-task-role"
-  assume_role_policy = data.aws_iam_policy_document.ecs_task_role.json
+resource "aws_iam_role" "resonance_signals_bot_ecs_task_role" {
+  name               = "resonance-signals-bot-ecs-task-role"
+  assume_role_policy = data.aws_iam_policy_document.resonance_signals_bot_ecs_task_role.json
 }
 
-data "aws_iam_policy_document" "ecs_task_role" {
+data "aws_iam_policy_document" "resonance_signals_bot_ecs_task_role" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
@@ -138,7 +138,7 @@ data "aws_iam_policy_document" "ecs_task_role" {
 ###############################################################################
 # CloudWatch Log Groups
 ###############################################################################
-resource "aws_cloudwatch_log_group" "log_groups" {
+resource "aws_cloudwatch_log_group" "resonance_signals_bot_log_groups" {
   for_each          = local.bots
   name              = "/ecs/${each.key}"
   retention_in_days = 7
@@ -153,21 +153,23 @@ resource "aws_lambda_permission" "cloudwatch_errors_to_lambda_permissions" {
   action        = "lambda:InvokeFunction"
   function_name = "cloud-watch-errors-slack-notifications-lambda"
   principal     = "logs.${var.aws_region}.amazonaws.com"
-  source_arn    = "${aws_cloudwatch_log_group.log_groups[each.key].arn}:*"
+  source_arn    = "${aws_cloudwatch_log_group.resonance_signals_bot_log_groups[each.key].arn}:*"
 }
 
 resource "aws_cloudwatch_log_subscription_filter" "cloudwatch_errors_subscription_filters" {
   for_each        = local.bots
   name            = "${each.key}-error-subscription-filter"
-  log_group_name  = aws_cloudwatch_log_group.log_groups[each.key].name
+  log_group_name  = aws_cloudwatch_log_group.resonance_signals_bot_log_groups[each.key].name
   filter_pattern  = "?ERROR ?Error ?error"
   destination_arn = "arn:aws:lambda:${var.aws_region}:${var.aws_account_id}:function:cloud-watch-errors-slack-notifications-lambda"
+
+  depends_on = [aws_lambda_permission.cloudwatch_errors_to_lambda_permissions]
 }
 
 ###############################################################################
 # ECR Repositories
 ###############################################################################
-resource "aws_ecr_repository" "repositories" {
+resource "aws_ecr_repository" "resonance_signals_bot_repositories" {
   for_each = local.bots
   name     = each.key
 }
@@ -175,15 +177,15 @@ resource "aws_ecr_repository" "repositories" {
 ###############################################################################
 # ECS Task Definitions
 ###############################################################################
-resource "aws_ecs_task_definition" "task_definitions" {
+resource "aws_ecs_task_definition" "resonance_signals_bot_task_definitions" {
   for_each                 = local.bots
   family                   = each.key
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = each.value.cpu
   memory                   = each.value.memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = aws_iam_role.resonance_signals_bot_ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.resonance_signals_bot_ecs_task_role.arn
 
   runtime_platform {
     operating_system_family = "LINUX"
@@ -193,7 +195,7 @@ resource "aws_ecs_task_definition" "task_definitions" {
   container_definitions = jsonencode([
     {
       name      = each.key
-      image     = "${aws_ecr_repository.repositories[each.key].repository_url}:latest"
+      image     = "${aws_ecr_repository.resonance_signals_bot_repositories[each.key].repository_url}:latest"
       essential = true
       environment = [
         {
@@ -208,7 +210,7 @@ resource "aws_ecs_task_definition" "task_definitions" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.log_groups[each.key].name
+          awslogs-group         = aws_cloudwatch_log_group.resonance_signals_bot_log_groups[each.key].name
           awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
@@ -221,17 +223,17 @@ resource "aws_ecs_task_definition" "task_definitions" {
 # ECS Services (one per bot), each uses FARGATE
 # - desired_count = 1 ensures each bot runs exactly one instance
 ###############################################################################
-resource "aws_ecs_service" "services" {
+resource "aws_ecs_service" "resonance_signals_bot_services" {
   for_each        = local.bots
   name            = "${each.key}-service"
-  cluster         = aws_ecs_cluster.trading_bots_cluster.id
-  task_definition = aws_ecs_task_definition.task_definitions[each.key].arn
+  cluster         = aws_ecs_cluster.resonance_signals_bot_cluster.id
+  task_definition = aws_ecs_task_definition.resonance_signals_bot_task_definitions[each.key].arn
   desired_count   = 1
   launch_type     = "FARGATE"
 
   network_configuration {
     subnets          = [aws_default_subnet.default_a.id]
-    security_groups  = [aws_security_group.trading_bot_security_group.id]
+    security_groups  = [aws_security_group.resonance_signals_bot_security_group.id]
     assign_public_ip = true
   }
 
@@ -244,11 +246,11 @@ resource "aws_ecs_service" "services" {
 ###############################################################################
 # SNS to Slack Notifier Lambda
 ###############################################################################
-resource "aws_lambda_function" "sns_to_slack_notification" {
+resource "aws_lambda_function" "resonance_signals_bot_sns_to_slack_notification" {
   s3_bucket         = "algo-trading-bot"
   s3_key            = "lambdas/sns_to_slack_notification.zip"
-  function_name    = "sns-to-slack-notification"
-  role             = aws_iam_role.sns_to_slack_notification_lambda_role.arn
+  function_name    = "resonance-signals-bot-sns-to-slack-notification"
+  role             = aws_iam_role.resonance_signals_bot_sns_to_slack_notification_lambda_role.arn
   handler          = "index.handler"
   runtime          = "nodejs18.x"
 
@@ -259,8 +261,8 @@ resource "aws_lambda_function" "sns_to_slack_notification" {
   }
 }
 
-resource "aws_iam_role" "sns_to_slack_notification_lambda_role" {
-  name = "sns-to-slack-notification-lambda-role"
+resource "aws_iam_role" "resonance_signals_bot_sns_to_slack_notification_lambda_role" {
+  name = "resonance-signals-bot-sns-to-slack-notification-lambda-role"
   description = "IAM role for Lambda function that forwards SNS messages to Slack"
 
   assume_role_policy = jsonencode({
@@ -277,9 +279,9 @@ resource "aws_iam_role" "sns_to_slack_notification_lambda_role" {
   })
 }
 
-resource "aws_iam_role_policy" "sns_to_slack_lambda_cloudwatch_logging_policy" {
-  name = "sns-to-slack-notification-lambda-cloudwatch-logging-policy"
-  role = aws_iam_role.sns_to_slack_notification_lambda_role.id
+resource "aws_iam_role_policy" "resonance_signals_bot_sns_to_slack_notification_lambda_cloudwatch_logging_policy" {
+  name = "resonance-signals-bot-sns-to-slack-notification-lambda-cloudwatch-logging-policy"
+  role = aws_iam_role.resonance_signals_bot_sns_to_slack_notification_lambda_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -297,25 +299,25 @@ resource "aws_iam_role_policy" "sns_to_slack_lambda_cloudwatch_logging_policy" {
   })
 }
 
-resource "aws_lambda_permission" "sns_to_slack_notification_lambda_permission" {
+resource "aws_lambda_permission" "resonance_signals_bot_sns_to_slack_notification_lambda_permission" {
   statement_id  = "AllowExecutionFromSNS"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.sns_to_slack_notification.function_name
+  function_name = aws_lambda_function.resonance_signals_bot_sns_to_slack_notification.function_name
   principal     = "sns.amazonaws.com"
-  source_arn    = aws_sns_topic.trading_bot_resource_utilization_alarms.arn
+  source_arn    = aws_sns_topic.resonance_signals_bot_resource_utilization_alarms.arn
 }
 
 ###############################################################################
 # SNS Topic for Resource Utilization Alarms
 ###############################################################################
-resource "aws_sns_topic" "trading_bot_resource_utilization_alarms" {
-  name = "trading-bot-resource-utilization-alarms"
+resource "aws_sns_topic" "resonance_signals_bot_resource_utilization_alarms" {
+  name = "resonance-signals-bot-resource-utilization-alarms"
 }
 
-resource "aws_sns_topic_subscription" "lambda_slack_subscription" {
-  topic_arn = aws_sns_topic.trading_bot_resource_utilization_alarms.arn
+resource "aws_sns_topic_subscription" "resonance_signals_bot_lambda_slack_subscription" {
+  topic_arn = aws_sns_topic.resonance_signals_bot_resource_utilization_alarms.arn
   protocol  = "lambda"
-  endpoint  = aws_lambda_function.sns_to_slack_notification.arn
+  endpoint  = aws_lambda_function.resonance_signals_bot_sns_to_slack_notification.arn
 }
 
 ###############################################################################
@@ -334,12 +336,12 @@ resource "aws_cloudwatch_metric_alarm" "cpu_alarms" {
   alarm_description   = "CPU utilization is too high for ${each.key}"
 
   dimensions = {
-    ClusterName = aws_ecs_cluster.trading_bots_cluster.name
-    ServiceName = aws_ecs_service.services[each.key].name
+    ClusterName = aws_ecs_cluster.resonance_signals_bot_cluster.name
+    ServiceName = aws_ecs_service.resonance_signals_bot_services[each.key].name
   }
 
-  alarm_actions = [aws_sns_topic.trading_bot_resource_utilization_alarms.arn]
-  ok_actions    = [aws_sns_topic.trading_bot_resource_utilization_alarms.arn]
+  alarm_actions = [aws_sns_topic.resonance_signals_bot_resource_utilization_alarms.arn]
+  ok_actions    = [aws_sns_topic.resonance_signals_bot_resource_utilization_alarms.arn]
 
   tags = {
     Service = each.key
@@ -359,12 +361,12 @@ resource "aws_cloudwatch_metric_alarm" "memory_alarms" {
   alarm_description   = "Memory utilization is too high for ${each.key}"
 
   dimensions = {
-    ClusterName = aws_ecs_cluster.trading_bots_cluster.name
-    ServiceName = aws_ecs_service.services[each.key].name
+    ClusterName = aws_ecs_cluster.resonance_signals_bot_cluster.name
+    ServiceName = aws_ecs_service.resonance_signals_bot_services[each.key].name
   }
 
-  alarm_actions = [aws_sns_topic.trading_bot_resource_utilization_alarms.arn]
-  ok_actions    = [aws_sns_topic.trading_bot_resource_utilization_alarms.arn]
+  alarm_actions = [aws_sns_topic.resonance_signals_bot_resource_utilization_alarms.arn]
+  ok_actions    = [aws_sns_topic.resonance_signals_bot_resource_utilization_alarms.arn]
 
   tags = {
     Service = each.key
@@ -374,9 +376,9 @@ resource "aws_cloudwatch_metric_alarm" "memory_alarms" {
 ###############################################################################
 # IAM Policy for CloudWatch Metrics
 ###############################################################################
-resource "aws_iam_policy" "cloudwatch_metrics_policy" {
-  name        = "CloudWatchMetricsPolicy"
-  description = "Allows CloudWatch to publish metrics for ECS trading bots."
+resource "aws_iam_policy" "resonance_signals_bot_cloudwatch_metrics_policy" {
+  name        = "resonance-signals-bot-cloudwatch-metrics-policy"
+  description = "Allows CloudWatch to publish metrics for ECS resonance signals bots."
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -401,13 +403,13 @@ resource "aws_iam_policy" "cloudwatch_metrics_policy" {
           "logs:PutLogEvents",
           "logs:DescribeLogStreams"
         ]
-        Resource = [for log_group in aws_cloudwatch_log_group.log_groups : "${log_group.arn}:*"]
+        Resource = [for log_group in aws_cloudwatch_log_group.resonance_signals_bot_log_groups : "${log_group.arn}:*"]
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "attach_cloudwatch_metrics_policy" {
-  role       = aws_iam_role.ecs_task_execution_role.name
-  policy_arn = aws_iam_policy.cloudwatch_metrics_policy.arn
+resource "aws_iam_role_policy_attachment" "resonance_signals_bot_attach_cloudwatch_metrics_policy" {
+  role       = aws_iam_role.resonance_signals_bot_ecs_task_execution_role.name
+  policy_arn = aws_iam_policy.resonance_signals_bot_cloudwatch_metrics_policy.arn
 }

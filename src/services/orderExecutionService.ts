@@ -407,76 +407,76 @@ export class OrderExecutionService {
     position.fee = marketOrderFee;
     position.exchangeOrderId = marketOrder.id;
 
-    // Step 2: Place stop-loss order
-    const stopLossOrderSide: OrderSide = signal.action === 'LONG' ? 'sell' : 'buy';
-    const stopLossOrder = await this.exchangeService.placeStopLossOrder(
-      signal.symbol,
-      stopLossOrderSide,
-      roundedOrderAmount,
-      signal.slPrice
-    );
+    // // Step 2: Place stop-loss order
+    // const stopLossOrderSide: OrderSide = signal.action === 'LONG' ? 'sell' : 'buy';
+    // const stopLossOrder = await this.exchangeService.placeStopLossOrder(
+    //   signal.symbol,
+    //   stopLossOrderSide,
+    //   roundedOrderAmount,
+    //   signal.slPrice
+    // );
 
-    // Step 3: Place take-profit order
-    const takeProfitOrderSide: OrderSide = signal.action === 'LONG' ? 'sell' : 'buy';
-    const takeProfitOrder = await this.exchangeService.placeTakeProfitOrder(
-      signal.symbol,
-      takeProfitOrderSide,
-      roundedOrderAmount,
-      signal.tpPrice
-    );
+    // // Step 3: Place take-profit order
+    // const takeProfitOrderSide: OrderSide = signal.action === 'LONG' ? 'sell' : 'buy';
+    // const takeProfitOrder = await this.exchangeService.placeTakeProfitOrder(
+    //   signal.symbol,
+    //   takeProfitOrderSide,
+    //   roundedOrderAmount,
+    //   signal.tpPrice
+    // );
 
-    // Update position with conditional order IDs
-    position.stopLossOrderId = stopLossOrder.id;
-    position.takeProfitOrderId = takeProfitOrder.id;
+    // // Update position with conditional order IDs
+    // position.stopLossOrderId = stopLossOrder.id;
+    // position.takeProfitOrderId = takeProfitOrder.id;
     
-    this.fileStorage.updatePosition(position.id, position);
+    // this.fileStorage.updatePosition(position.id, position);
 
-    // Save conditional orders for tracking
-    const stopLossConditionalOrder: ConditionalOrder = {
-      id: `sl_${position.id}`,
-      positionId: position.id,
-      symbol: signal.symbol,
-      type: 'stop_loss',
-      side: stopLossOrderSide,
-      amount: roundedOrderAmount,
-      price: signal.slPrice,
-      status: 'pending',
-      exchangeOrderId: stopLossOrder.id,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    // // Save conditional orders for tracking
+    // const stopLossConditionalOrder: ConditionalOrder = {
+    //   id: `sl_${position.id}`,
+    //   positionId: position.id,
+    //   symbol: signal.symbol,
+    //   type: 'stop_loss',
+    //   side: stopLossOrderSide,
+    //   amount: roundedOrderAmount,
+    //   price: signal.slPrice,
+    //   status: 'pending',
+    //   exchangeOrderId: stopLossOrder.id,
+    //   createdAt: new Date(),
+    //   updatedAt: new Date()
+    // };
 
-    const takeProfitConditionalOrder: ConditionalOrder = {
-      id: `tp_${position.id}`,
-      positionId: position.id,
-      symbol: signal.symbol,
-      type: 'take_profit',
-      side: takeProfitOrderSide,
-      amount: roundedOrderAmount,
-      price: signal.tpPrice,
-      status: 'pending',
-      exchangeOrderId: takeProfitOrder.id,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    // const takeProfitConditionalOrder: ConditionalOrder = {
+    //   id: `tp_${position.id}`,
+    //   positionId: position.id,
+    //   symbol: signal.symbol,
+    //   type: 'take_profit',
+    //   side: takeProfitOrderSide,
+    //   amount: roundedOrderAmount,
+    //   price: signal.tpPrice,
+    //   status: 'pending',
+    //   exchangeOrderId: takeProfitOrder.id,
+    //   createdAt: new Date(),
+    //   updatedAt: new Date()
+    // };
 
-    this.fileStorage.saveConditionalOrder(stopLossConditionalOrder);
-    this.fileStorage.saveConditionalOrder(takeProfitConditionalOrder);
+    // this.fileStorage.saveConditionalOrder(stopLossConditionalOrder);
+    // this.fileStorage.saveConditionalOrder(takeProfitConditionalOrder);
 
-    // Calculate position entry analytics
-    await this.analyticsService.calculatePositionEntryAnalytics(signal, position, marketOrder);
+    // // Calculate position entry analytics
+    // await this.analyticsService.calculatePositionEntryAnalytics(signal, position, marketOrder);
 
-    logger.info('Market order executed with separate stop-loss and take-profit orders', {
-      symbol: signal.symbol,
-      side: orderSide,
-      amount: roundedOrderAmount,
-      calculatedFee: marketOrderFee,
-      feeRate: config.exchange.fees.taker,
-      stopLossPrice: signal.slPrice,
-      takeProfitPrice: signal.tpPrice,
-      stopLossOrderId: stopLossOrder.id,
-      takeProfitOrderId: takeProfitOrder.id
-    });
+    // logger.info('Market order executed with separate stop-loss and take-profit orders', {
+    //   symbol: signal.symbol,
+    //   side: orderSide,
+    //   amount: roundedOrderAmount,
+    //   calculatedFee: marketOrderFee,
+    //   feeRate: config.exchange.fees.taker,
+    //   stopLossPrice: signal.slPrice,
+    //   takeProfitPrice: signal.tpPrice,
+    //   stopLossOrderId: stopLossOrder.id,
+    //   takeProfitOrderId: takeProfitOrder.id
+    // });
   }
 
   /**
