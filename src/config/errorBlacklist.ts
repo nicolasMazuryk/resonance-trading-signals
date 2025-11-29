@@ -7,7 +7,9 @@ export const ERROR_BLACKLIST = [
   "Order does not exist.",
   "Order would immediately trigger.",
   "ReduceOnly Order is rejected.",
-  "InvalidOrder: binanceusdm"
+  "InvalidOrder: binanceusdm",
+  "Unknown order sent.",
+  "OrderNotFound: binanceusdm"
 ];
 
 /**
