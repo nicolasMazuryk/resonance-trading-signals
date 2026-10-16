@@ -10,10 +10,10 @@
  * @returns Calculated fee amount
  */
 export function calculateFee(amount: number, price: number, feeRate: number): number {
-  const notionalValue = amount * price;
-  const fee = notionalValue * feeRate;
-  // Round to 8 decimal places to avoid floating-point precision issues
-  return Math.round(fee * 100000000) / 100000000;
+	const notionalValue = amount * price
+	const fee = notionalValue * feeRate
+	// Round to 8 decimal places to avoid floating-point precision issues
+	return Math.round(fee * 100000000) / 100000000
 }
 
 /**
@@ -24,7 +24,7 @@ export function calculateFee(amount: number, price: number, feeRate: number): nu
  * @returns Calculated taker fee amount
  */
 export function calculateTakerFee(amount: number, price: number, takerFeeRate: number): number {
-  return calculateFee(amount, price, takerFeeRate);
+	return calculateFee(amount, price, takerFeeRate)
 }
 
 /**
@@ -35,7 +35,7 @@ export function calculateTakerFee(amount: number, price: number, takerFeeRate: n
  * @returns Calculated maker fee amount
  */
 export function calculateMakerFee(amount: number, price: number, makerFeeRate: number): number {
-  return calculateFee(amount, price, makerFeeRate);
+	return calculateFee(amount, price, makerFeeRate)
 }
 
 /**
@@ -48,15 +48,15 @@ export function calculateMakerFee(amount: number, price: number, makerFeeRate: n
  * @returns Calculated fee amount
  */
 export function calculateOrderFee(
-  amount: number, 
-  price: number, 
-  orderType: 'market' | 'limit',
-  takerFeeRate: number,
-  makerFeeRate: number
+	amount: number,
+	price: number,
+	orderType: 'market' | 'limit',
+	takerFeeRate: number,
+	makerFeeRate: number
 ): number {
-  if (orderType === 'market') {
-    return calculateTakerFee(amount, price, takerFeeRate);
-  } else {
-    return calculateMakerFee(amount, price, makerFeeRate);
-  }
+	if (orderType === 'market') {
+		return calculateTakerFee(amount, price, takerFeeRate)
+	} else {
+		return calculateMakerFee(amount, price, makerFeeRate)
+	}
 }
