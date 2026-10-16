@@ -86,7 +86,7 @@ export class SignalParser {
       const sizeUsdt = parseFloat(sizeMatch[1]);
 
       // Extract entry time
-      const timeMatch = messageText.match(/(?:🕒\s*)?Entry time:\s*([\d\-:T\.Z\sGMT\+]+)/);
+      const timeMatch = messageText.match(/(?:🕒\s*)?Entry time:\s*([\d\-:T.Z\sGMT+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
       const entryTime = this.convertToISOFormat(timeMatch[1].trim());
 
@@ -173,7 +173,7 @@ export class SignalParser {
       const closePrice = parseFloat(priceMatch[1]);
 
       // Extract close time
-      const timeMatch = messageText.match(/Closing time:\s*([\d\-\s:GMT\+]+)/);
+      const timeMatch = messageText.match(/Closing time:\s*([\d\-\s:GMT+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
       const closeTime = this.convertToISOFormat(timeMatch[1].trim());
 
@@ -224,7 +224,7 @@ export class SignalParser {
       const partialPercent = parseFloat(percentMatch[1]);
 
       // Extract time
-      const timeMatch = messageText.match(/(?:⏰\s*)?Time:\s*([\d\-:T\.Z\sGMT\+]+)/);
+      const timeMatch = messageText.match(/(?:⏰\s*)?Time:\s*([\d\-:T.Z\sGMT+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
       const partialTime = this.convertToISOFormat(timeMatch[1].trim());
 
@@ -276,7 +276,7 @@ export class SignalParser {
       }
 
       // Extract update time
-      const timeMatch = messageText.match(/(?:⏰\s*)?Update time:\s*([\d\-:T\.Z\sGMT\+]+)/);
+      const timeMatch = messageText.match(/(?:⏰\s*)?Update time:\s*([\d\-:T.Z\sGMT+]+)/);
       if (!timeMatch || !timeMatch[1]) return null;
       const updateTime = this.convertToISOFormat(timeMatch[1].trim());
 

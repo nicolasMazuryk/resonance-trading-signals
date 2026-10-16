@@ -161,10 +161,8 @@ export class AnalyticsService {
 
       // Classify trade result based on signal type (closeReason), not actual PnL
       let tradeResult: 'profitable' | 'breakeven' | 'loss' | 'none';
-      let profitPercent: number | undefined;
-
       // Calculate profit percent for all close reasons
-      profitPercent = (totalPnL / position.sizeUsdt) * 100;
+      const profitPercent: number | undefined = (totalPnL / position.sizeUsdt) * 100;
 
       if (position.closeReason === 'Take profit achieved') {
         tradeResult = 'profitable';

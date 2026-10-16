@@ -88,11 +88,9 @@ export class PositionService {
 
     // Calculate total realized profit/loss from partial closes
     let totalRealizedPnL = 0;
-    let totalClosedQuantity = 0;
 
     for (const partialClose of position.partialCloses) {
       totalRealizedPnL += partialClose.realizedPnL;
-      totalClosedQuantity += partialClose.closeQuantity;
     }
 
     const remainingQuantity = position.remainingQuantity;
