@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { SignalParser } from '../signalParser';
-import { Signal } from '../../types';
 
 describe('SignalParser', () => {
   describe('parseMessage', () => {
     it('should parse opening signal correctly', () => {
       const messageText = `Opening: LONG
 
-Пара: BTC/USDT
+💱 Пара: BTC/USDT
 
 Price: 45000
 
@@ -38,7 +37,7 @@ Entry time: 2024-01-15 14:30:00 GMT+0`;
     it('should parse closing signal correctly', () => {
       const messageText = `Closing: Take profit achieved
 
-Пара: BTC/USDT
+💱 Пара: BTC/USDT
 
 Price: 46000
 
@@ -58,7 +57,7 @@ Closing time: 2024-01-15 15:30:00 GMT+0`;
     it('should parse partial close signal correctly', () => {
       const messageText = `Partial position close
 
-Пара: BTC/USDT
+💱 Пара: BTC/USDT
 
 Partial close price: 45500
 
@@ -80,7 +79,7 @@ Time: 2024-01-15 14:45:00 GMT+0`;
     it('should parse update signal with explicit price correctly', () => {
       const messageText = `Update: Move the stop loss to 44500
 
-Пара: BTC/USDT
+💱 Пара: BTC/USDT
 
 Update time: 2024-01-15 14:35:00 GMT+0`;
 
@@ -98,7 +97,7 @@ Update time: 2024-01-15 14:35:00 GMT+0`;
     it('should parse update signal with breakeven correctly', () => {
       const messageText = `Update: Move the stop loss to breakeven
 
-Пара: BTC/USDT
+💱 Пара: BTC/USDT
 
 Update time: 2024-01-15 14:35:00 GMT+0`;
 
@@ -124,7 +123,7 @@ Update time: 2024-01-15 14:35:00 GMT+0`;
     it('should handle different datetime formats', () => {
       const messageText = `Opening: SHORT
 
-Пара: ETH/USDT
+💱 Пара: ETH/USDT
 
 Price: 3000
 
@@ -148,7 +147,7 @@ Entry time: 15-01-2024 14:30:00`;
     it('should generate unique message hash', () => {
       const messageText = `Opening: LONG
 
-Пара: BTC/USDT
+💱 Пара: BTC/USDT
 
 Price: 45000
 
@@ -170,9 +169,9 @@ Entry time: 2024-01-15 14:30:00 GMT+0`;
     });
 
     it('should handle case insensitive matching', () => {
-      const messageText = `opening: long
+      const messageText = `Opening: long
 
-Пара: btc/usdt
+💱 Пара: btc/usdt
 
 Price: 45000
 
