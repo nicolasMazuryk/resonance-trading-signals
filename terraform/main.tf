@@ -21,8 +21,8 @@ locals {
   # Bot configurations
   bots = {
     resonance_reverse_signal_bot = {
-      cpu      = 512
-      memory   = 1024
+      cpu      = 256
+      memory   = 512
       bot_mode = "FUTURES"
     }
   }
@@ -170,8 +170,9 @@ resource "aws_cloudwatch_log_subscription_filter" "cloudwatch_errors_subscriptio
 # ECR Repositories
 ###############################################################################
 resource "aws_ecr_repository" "resonance_signals_bot_repositories" {
-  for_each = local.bots
-  name     = each.key
+  for_each    = local.bots
+  name        = each.key
+  force_delete = true
 }
 
 ###############################################################################
